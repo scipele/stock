@@ -1,7 +1,7 @@
 #pragma once
 
-#include "analysis.h"
-#include "fundamentals.h"
+#include "analysis.hpp"
+#include "fundamentals.hpp"
 
 
 struct ScoreResult
@@ -12,20 +12,16 @@ struct ScoreResult
     double rsi_score = 0.0;
     double momentum_score = 0.0;
     double volatility_score = 0.0;
-
     double technical_score = 0.0;
     double fundamental_score = 0.0;
-
     double overall_score = 0.0;
 };
-
 
 
 ScoreResult calculate_score(
     const TechnicalData& technical,
     const FundamentalData& fundamental
 );
-
 
 
 // Individual scoring functions

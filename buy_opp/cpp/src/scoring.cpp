@@ -1,4 +1,4 @@
-#include "scoring.h"
+#include "scoring.hpp"
 
 #include <algorithm>
 

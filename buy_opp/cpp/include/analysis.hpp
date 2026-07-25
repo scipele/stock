@@ -2,24 +2,18 @@
 
 #include <vector>
 
-
 struct TechnicalData
 {
     double price = 0.0;
 
     double previous_low = 0.0;
     double previous_high = 0.0;
-
     double swing_low = 0.0;
     double swing_high = 0.0;
-
     double distance_previous_low = 0.0;
     double distance_swing_low = 0.0;
-
     double rsi = 50.0;
-
     double momentum_3m = 0.0;
-
     double volatility = 0.0;
 };
 
@@ -33,7 +27,6 @@ TechnicalData analyze_prices(
 
 
 // Individual calculations
-
 double calculate_rsi(
     const std::vector<double>& closes,
     int period = 14

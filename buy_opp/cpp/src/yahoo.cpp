@@ -1,4 +1,4 @@
-#include "yahoo.h"
+#include "yahoo.hpp"
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
 

@@ -1,16 +1,14 @@
 #pragma once
 
 #include <vector>
-#include "yahoo.h"
-#include "scoring.h"
+#include "yahoo.hpp"
+#include "scoring.hpp"
 
 
 struct StockResult
 {
     std::string ticker;
-
     YahooStockData data;
-
     ScoreResult score;
 };
 
