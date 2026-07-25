@@ -1,46 +1,6 @@
 /*
-Tree Structure, in order of workflow:
-
-                                            Step 1: Download your current positions from Schwab
-
-buy_opp
-    /script
-        buy_opp.sh                          Step 2: Main Script runs all other scripts and programs
-        get_cur_pos_tickers.sh              Step 3: Bash Script to get current positions from Downloads Folder and saves to input/current_positions.csv
-        combine_sort_tickers.sh             Step 6: Bash Script to combine current positions, S&P 500 tickers, and other tickers, sort and remove duplicates, saves to tickers_combined.csv
-
-    /data
-        tickers_current_positions.csv       Step 4: Current positions list is saved from step 3
-        tickers_s_p_500.csv                 Step 5: S&P 500 Tickers list stays in data folder, used to combine with current positions
-        tickers_other.csv                   Step 6: Other Tickers list stays in data folder, used to combine with current positions
-        tickers_combined.csv                Step 7: Combined and sorted tickers list is saved from step 6
-        fundamentals.csv                    Step 9: Fundamental data stored in CSV format
-
-    /py
-        get_financials.py                   Step 8: Optional (y/n) - Python Script to get fundamental data daily (uses yfinance library)
-
-    /cpp
-        /bin
-            buy_opp                         Step 10: Compiled C++ program to process tickers, utilize fundamentals, get yahoo data, compute scores, and generate summary
-        /include
-            analysis.h
-            fundamentals.h
-            scoring.h
-            yahoo.h
-            summary.h
-        /src
-            analysis.cpp
-            fundamentals.cpp
-            scoring.cpp
-            yahoo.cpp
-            summary.cpp
-            main.cpp
-    /output                                 
-        summary_all.csv                     Step 11: Output CSV files saved here
-
-
 Compile Linux with the following from the cpp/src directory:
-g++ main.cpp analysis.cpp fundamentals.cpp scoring.cpp summary.cpp yahoo.cpp -o ../bin/buy_opp -I../include -std=c++17 -O3 -lcurl -pthread
+g++ main.cpp analysis.cpp fundamentals.cpp metadata.cpp scoring.cpp summary.cpp yahoo.cpp -o ../bin/buy_opp -I../include -std=c++17 -O3 -lcurl -pthread
 */
 
 #include <iostream>
@@ -55,12 +15,14 @@ g++ main.cpp analysis.cpp fundamentals.cpp scoring.cpp summary.cpp yahoo.cpp -o 
 #include <iomanip>
 #include <set>
 #include <curl/curl.h>
+#include <sstream>
+#include <unordered_map>
 
 #include "../include/fundamentals.hpp"
 #include "../include/yahoo.hpp"
 #include "../include/scoring.hpp"
 #include "../include/summary.hpp"
-
+#include "../include/metadata.hpp"
 
 namespace fs = std::filesystem;
 
@@ -72,9 +34,10 @@ std::vector<std::string> failed_tickers;
 
 std::vector<StockResult> results;
 FundamentalsDB fundamentals;
+std::unordered_map<std::string,Metadata> metadata;
 int total_tickers = 0;
 std::chrono::steady_clock::time_point start_time;
-
+std::unordered_map<std::string,bool> owned_map;
 
 std::vector<std::string> load_tickers() {
     std::set<std::string> unique;
@@ -85,7 +48,7 @@ std::vector<std::string> load_tickers() {
     if(!file.is_open())
     {
         std::cerr
-            << "Unable to open ../data/tickers_combined.csv\n";
+            << "Unable to open ../../data/tickers_combined.csv\n";
         return {};
     }
 
@@ -98,22 +61,26 @@ std::vector<std::string> load_tickers() {
         if(line.empty())
             continue;
 
-        // remove spaces/quotes
-        line.erase(
+        std::stringstream ss(line);
+        std::string ticker;
+        std::string owned;
+
+        std::getline(ss,ticker,',');
+        std::getline(ss,owned,',');
+
+        ticker.erase(
             0,
-            line.find_first_not_of(
-                " \t\""
-            )
+            ticker.find_first_not_of(" \t\"")
         );
 
-        line.erase(
-            line.find_last_not_of(
-                " \t\""
-            ) + 1
+        ticker.erase(
+            ticker.find_last_not_of(" \t\"") + 1
         );
 
-        if(!line.empty())
-            unique.insert(line);
+        if(!ticker.empty()) {
+            unique.insert(ticker);
+            if(owned=="Y") owned_map[ticker]=true;
+        }
     }
     return std::vector<std::string>( 
             unique.begin(),
@@ -184,9 +151,18 @@ void process_stock(const std::string& ticker) {
     FundamentalData f = fundamentals.get(ticker);
     ScoreResult score =calculate_score(data.technical,f);
     data.fundamental = f;
+
     StockResult result;
     result.ticker = ticker;
+    result.owned = owned_map[ticker];
     result.data = data;
+    auto it=metadata.find(ticker);
+
+    if(it!=metadata.end()){
+        result.company=it->second.company;
+        result.sector=it->second.sector;
+    }
+
     result.score = score;
 
     {
@@ -202,7 +178,7 @@ void process_stock(const std::string& ticker) {
 
     // std::cout << ticker
     //           << " Score: "
-    //           << score.overall_score
+    //           << score.
     //           << "\n";
 }
 
@@ -227,11 +203,17 @@ int main()
         return 1;
     }
 
-    fundamentals.load("../data/fundamentals.csv");
+    fundamentals.load("../../data/fundamentals.csv");
 
     std::cout << "Loaded "
               << tickers.size()
               << " tickers\n\n";
+
+    metadata=load_metadata("../../data/stock_metadata.csv");
+
+    std::cout << "Loaded metadata "
+              << metadata.size()
+              << " entries\n";
 
     const int max_threads = 10;
     std::vector<std::thread> threads;
@@ -270,7 +252,7 @@ int main()
 
     generate_summary(
         results,
-        "output/summary_all.csv"
+        "../../output/summary_all.csv"
     );
 
     curl_global_cleanup();

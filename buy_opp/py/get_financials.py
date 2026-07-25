@@ -46,8 +46,7 @@ def get_fundamentals(ticker):
             "Ticker": ticker,
             "Forward_PE": info.get("forwardPE", 0),
             "Trailing_PE": info.get("trailingPE", 0),
-            "Market_Cap": info.get("marketCap", 0),
-            "Sector": info.get("sector", "")
+            "Market_Cap": info.get("marketCap", 0)
         }
 
 
@@ -59,8 +58,7 @@ def get_fundamentals(ticker):
             "Ticker": ticker,
             "Forward_PE": 0,
             "Trailing_PE": 0,
-            "Market_Cap": 0,
-            "Sector": ""
+            "Market_Cap": 0
         }
 
 
@@ -68,60 +66,40 @@ def get_fundamentals(ticker):
 def main():
 
     tickers = load_tickers()
-
     print(f"Loaded {len(tickers)} tickers")
-
-
     rows = []
 
-
     for i, ticker in enumerate(tickers, 1):
-
-        print(f"\rFetching {ticker} ({i}/{len(tickers)})",
-              end="")
-
+        print(f"\rFetching {ticker} ({i}/{len(tickers)})",end="")
         data = get_fundamentals(ticker)
-
         rows.append(data)
 
         # avoid hammering Yahoo
         time.sleep(0.25)
 
-
-
     print()
-
 
     with open(
         OUTPUT_FILE,
         "w",
         newline=""
     ) as f:
-
-
         writer = csv.DictWriter(
             f,
             fieldnames=[
                 "Ticker",
                 "Forward_PE",
                 "Trailing_PE",
-                "Market_Cap",
-                "Sector"
+                "Market_Cap"
             ]
         )
 
-
         writer.writeheader()
-
         writer.writerows(rows)
-
-
 
     print()
     print("Created:")
     print(OUTPUT_FILE)
-
-
 
 if __name__ == "__main__":
     main()

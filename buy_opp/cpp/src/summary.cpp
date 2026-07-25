@@ -6,16 +6,12 @@
 #include <iomanip>
 
 
-
 void generate_summary(
     const std::vector<StockResult>& stocks,
     const std::string& filename)
 {
 
-    std::vector<StockResult> sorted =
-        stocks;
-
-
+    std::vector<StockResult> sorted = stocks;
 
     std::sort(
         sorted.begin(),
@@ -28,11 +24,7 @@ void generate_summary(
         }
     );
 
-
-
     std::ofstream out(filename);
-
-
 
     if(!out.is_open())
     {
@@ -44,95 +36,63 @@ void generate_summary(
         return;
     }
 
-
-
-    out
-    << "Rank,"
-    << "Ticker,"
-    << "Overall_Score,"
-    << "Price,"
-    << "Previous_Low,"
-    << "Swing_Low,"
-    << "Dist_Previous_Low_pct,"
-    << "Dist_Swing_Low_pct,"
-    << "RSI,"
-    << "Forward_PE,"
-    << "Trailing_PE,"
-    << "Momentum_3M,"
-    << "Volatility,"
-    << "Swing_Score,"
-    << "Support_Score,"
-    << "PE_Score,"
-    << "RSI_Score,"
-    << "Momentum_Score,"
-    << "Volatility_Score\n";
-
-
+    out << "Rank,"
+        << "Owned,"
+        << "Ticker,"
+        << "Company,"
+        << "Sector,"
+        << "Overall_Score,"
+        << "Price,"
+        << "Previous_Low,"
+        << "Swing_Low,"
+        << "Dist_Previous_Low_pct,"
+        << "Dist_Swing_Low_pct,"
+        << "RSI,"
+        << "Forward_PE,"
+        << "Trailing_PE,"
+        << "Momentum_3M,"
+        << "Volatility,"
+        << "Swing_Score,"
+        << "Support_Score,"
+        << "PE_Score,"
+        << "RSI_Score,"
+        << "Momentum_Score,"
+        << "Volatility_Score\n";
 
     int rank = 1;
-
 
     out << std::fixed
         << std::setprecision(2);
 
-
-
     for(const auto& stock : sorted)
     {
+        const auto& t = stock.data.technical;
+        const auto& f = stock.data.fundamental;
+        const auto& s = stock.score;
 
-        const auto& t =
-            stock.data.technical;
-
-
-        const auto& f =
-            stock.data.fundamental;
-
-
-        const auto& s =
-            stock.score;
-
-
-
-        out
-        << rank++ << ","
-        << stock.ticker << ","
-
-        << s.overall_score << ","
-
-        << t.price << ","
-
-        << t.previous_low << ","
-
-        << t.swing_low << ","
-
-        << t.distance_previous_low << ","
-
-        << t.distance_swing_low << ","
-
-        << t.rsi << ","
-
-        << f.forward_pe << ","
-
-        << f.trailing_pe << ","
-
-        << t.momentum_3m << ","
-
-        << t.volatility << ","
-
-        << s.swing_score << ","
-
-        << s.support_score << ","
-
-        << s.pe_score << ","
-
-        << s.rsi_score << ","
-
-        << s.momentum_score << ","
-
-        << s.volatility_score
-
-        << "\n";
-
+        out << rank++ << ","
+            << (stock.owned ? "Y" : "") << ","
+            << stock.ticker << ","
+            << "\"" << stock.company << "\","
+            << stock.sector << ","
+            << s.overall_score << ","
+            << t.price << ","
+            << t.previous_low << ","
+            << t.swing_low << ","
+            << t.distance_previous_low << ","
+            << t.distance_swing_low << ","
+            << t.rsi << ","
+            << f.forward_pe << ","
+            << f.trailing_pe << ","
+            << t.momentum_3m << ","
+            << t.volatility << ","
+            << s.swing_score << ","
+            << s.support_score << ","
+            << s.pe_score << ","
+            << s.rsi_score << ","
+            << s.momentum_score << ","
+            << s.volatility_score
+            << "\n";
     }
 
 

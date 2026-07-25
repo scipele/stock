@@ -17,19 +17,27 @@ echo "Output: tickers_combined.csv"
 ./combine_sort_tickers.sh
 
 echo
-echo "3. Updating fundamentals (recommended daily)..."
-read -p "   Would you like to update fundamentals (recommended daily)? (y/n) " UPDATE_FUNDAMENTALS
-if [[ "$UPDATE_FUNDAMENTALS" == "y" ]]; then
-    source /home/dev/py/.venv/bin/activate
+# python is run in the virtual environment (up two directories) to ensure correct dependencies are used
+# python scripts are loaded from the buy_opp/py directory (up one directory)
+source /home/dev/py/.venv/bin/activate
 
+read -p "3. Would you like to update fundamentals (recommended daily)? (y/n) " UPDATE_FUNDAMENTALS
+if [[ "$UPDATE_FUNDAMENTALS" == "y" ]]; then
     python ../py/get_financials.py
-    deactivate
 fi
+echo
+read -p "4. Would you like to update Ticker Metadata (recommended monthly) (y/n) " UPDATE_TICKER_METADATA
+if [[ "$UPDATE_TICKER_METADATA" == "y" ]]; then
+    python ../py/get_ticker_metadata.py
+fi
+deactivate
 
 echo
-echo "4. Running C++ scanner..."
-# run compiled C++ scanner
-../cpp/bin/buy_opp
+echo "5. Running C++ scanner..."
+
+# change directory and run compiled C++ scanner
+cd ../cpp/bin
+./buy_opp
 
 END_TIME=$(date +%s)
 ELAPSED=$((END_TIME - START_TIME))
@@ -41,3 +49,4 @@ echo " Runtime: ${ELAPSED} seconds"
 echo " Output: output/summary_all.csv"
 echo "======================================"
 echo
+read -p "Press any key to continue..." -n1 -s

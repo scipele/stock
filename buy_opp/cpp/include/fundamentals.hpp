@@ -4,10 +4,10 @@
 #include <unordered_map>
 
 
-struct FundamentalData
-{
-    double forward_pe = 0.0;
-    double trailing_pe = 0.0;
+struct FundamentalData{
+    double forward_pe=0;
+    double trailing_pe=0;
+    double market_cap=0;
 };
 
 

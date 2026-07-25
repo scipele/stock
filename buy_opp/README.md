@@ -19,23 +19,23 @@ Run everything:
 buy_opp/
 │
 ├── script/                              # Workflow scripts
-│   ├── buy_opp.sh                       # Step 2: Main workflow controller
-│   ├── get_cur_pos_tickers.sh           # Step 3: Extract Schwab positions
-│   └── combine_sort_tickers.sh          # Step 6: Combine and sort tickers
+│   ├── buy_opp.sh                       # Step 1: Main workflow controller
+│   ├── get_cur_pos_tickers.sh           # Step 2a: Extract Schwab positions
+│   └── combine_sort_tickers.sh          # Step 3: Combine and sort tickers
 │
 ├── data/                                # Data files
-│   ├── tickers_current_positions.csv    # Step 4: Current Schwab positions
-│   ├── tickers_s_p_500.csv              # Step 5: S&P 500 ticker list
-│   ├── tickers_other.csv                # Step 5: Additional watch list
-│   ├── tickers_combined.csv             # Step 7: Final ticker universe
-│   └── fundamentals.csv                 # Step 9: Financial data from Python
+│   ├── tickers_current_positions.csv    # Step 2b: Current Schwab positions
+│   ├── tickers_s_p_500.csv              # Step 3a: S&P 500 ticker list
+│   ├── tickers_other.csv                # Step 3b: Additional tickers
+│   ├── tickers_combined.csv             # Step 3c: Final ticker
+│   └── fundamentals.csv                 # Step 4a: Financial data from Python
 │
 ├── py/                                  # Python utilities
-│   └── get_financials.py                # Step 8: Update fundamentals.csv
+│   └── get_financials.py                # Step 4: Update fundamentals.csv
 │
 ├── cpp/                                 # C++ stock scanner
 │   ├── bin/
-│   │   └── buy_opp                     # Step 10: Compiled scanner executable
+│   │   └── buy_opp                     # Step 5: Compiled scanner executable
 │   │
 │   ├── include/
 │   │   ├── analysis.h
@@ -45,7 +45,7 @@ buy_opp/
 │   │   └── summary.h
 │   │
 │   └── src/
-│       ├── main.cpp                     # Step 10: Main program
+│       ├── main.cpp                     
 │       ├── analysis.cpp
 │       ├── fundamentals.cpp
 │       ├── scoring.cpp
@@ -53,5 +53,5 @@ buy_opp/
 │       └── summary.cpp
 │
 └── output/
-    └── summary_all.csv                  # Step 11: Generated report
+    └── summary_all.csv                  # Step 5a: Generated report
 ```
