@@ -120,7 +120,7 @@ void update_progress(
     int eta_sec = static_cast<int>(eta_seconds) % 60;
     std::lock_guard<std::mutex> lock(progress_mutex);
 
-    std::cout << "   \r[";
+    std::cout << "   \r   [";
 
     for (int i = 0; i < width; i++) {
         std::cout << (i < filled ? '#' : '-');
@@ -201,8 +201,8 @@ int main()
     curl_global_init(CURL_GLOBAL_DEFAULT);
 
     std::cout 
-        << "\nStock Buy Opportunity Scanner\n"
-        << "============================\n\n";
+        << "\n   c++ Stock Buy Opportunity Calc / Generate .csv Summary\n"
+        <<   "   ======================================================\n\n";
 
     fs::create_directories("output");
 
@@ -256,14 +256,14 @@ int main()
     if(!failed_tickers.empty())
     {
         std::cout
-            << "\nSkipped "
+            << "\n   Skipped "
             << failed_tickers.size()
             << " tickers:\n";
 
         for(const auto& failed : failed_tickers)
         {
             std::cout
-                << "  "
+                << "      "
                 << failed.ticker
                 << " - "
                 << failed.reason

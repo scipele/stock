@@ -13,8 +13,8 @@ EXCLUDE_NAMES_CONTAINING = r"etf|fund|money|adm"
 # Silence the matplotlib font manager warnings specifically
 logging.getLogger('matplotlib.font_manager').setLevel(logging.ERROR)
 
-INPUT_FOLDER = Path("/home/dev/cpp/stock_intraday/output")
-CHART_FOLDER = Path("/home/dev/py/stock_intraday/charts")
+INPUT_FOLDER = Path("/home/dev/stock/intraday_charting/output")
+CHART_FOLDER = Path("/home/dev/stock/intraday_charting/charts")
 # Absolute Schwab download path
 SCHWAB_FOLDER = Path("/home/ts/Downloads")
 
@@ -70,7 +70,7 @@ def find_schwab_data():
             
             # --- EVALUATE FILTER PATTERNS AGAINST DESCRIPTION FIELD ---
             if desc and exclude_regex.search(desc):
-                print(f"Skipping Schwab processing for {sym}: Name matches exclusion filter ('{desc}')")
+                # print(f"Skipping Schwab processing for {sym}: Name matches exclusion filter ('{desc}')")
                 continue
             
             # 1. Store the Cost/Share entry price mapping
@@ -128,9 +128,10 @@ def find_swing_levels(df, previous_day_high, previous_day_low):
             
     return swing_high, swing_low
 
-def create_chart(csv_file, days_to_plot, schwab_prices, schwab_names):
+def create_chart(indx, file_count, csv_file, days_to_plot, schwab_prices, schwab_names):
     ticker = csv_file.stem.upper()
-    print(f"Creating chart: {ticker}")
+    # used for debug
+    # print(f"Creating chart: {ticker}")
     
     # --- SAFE TITLE LOOKUP WITH ROBUST FALLBACK ---
     common_stock_fallbacks = {
@@ -154,7 +155,7 @@ def create_chart(csv_file, days_to_plot, schwab_prices, schwab_names):
     # Look up the automated entry price using our mapped dictionary
     entry_price = schwab_prices.get(ticker, None)
     if entry_price is not None:
-        print(f"{ticker}: Automated Entry Price loaded = ${entry_price:.2f}")
+        print(f"Processed {indx} of {file_count}")
 
     # Read CSV
     df = pd.read_csv(
@@ -178,16 +179,16 @@ def create_chart(csv_file, days_to_plot, schwab_prices, schwab_names):
     swing_high, swing_low = find_swing_levels(
         df, previous_day_high, previous_day_low
     )
-    print(
-        f"{ticker}: "
-        f"Swing High={swing_high}, "
-        f"Swing Low={swing_low}"
-    )
-    print(
-        f"{ticker}: "
-        f"Day High={previous_day_high:.2f}, "
-        f"Day Low={previous_day_low:.2f} "
-    )
+    #print(
+    #    f"{ticker}: "
+    #    f"Swing High={swing_high}, "
+    #    f"Swing Low={swing_low}"
+    #)
+    #print(
+    #    f"{ticker}: "
+    #    f"Day High={previous_day_high:.2f}, "
+    #    f"Day Low={previous_day_low:.2f} "
+    #)
     
     # Rename columns to mplfinance format
     df.rename(
@@ -346,8 +347,11 @@ def main():
     schwab_prices, schwab_names = find_schwab_data()
     
     files = INPUT_FOLDER.glob("*.csv")
+    indx = 0
+    file_count = len(list(INPUT_FOLDER.glob("*.csv")))
     for file in files:
-        create_chart(file, days_to_plot=args.days, schwab_prices=schwab_prices, schwab_names=schwab_names)
+        indx += 1
+        create_chart(indx, file_count, file, days_to_plot=args.days, schwab_prices=schwab_prices, schwab_names=schwab_names)
 
 # FIXED: Readded missing underscores to prevent execution failures
 if __name__ == "__main__":

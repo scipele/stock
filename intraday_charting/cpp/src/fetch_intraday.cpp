@@ -2,7 +2,7 @@
 fetch_intraday.cpp
 Downloads Yahoo Finance intraday data.
 Build:
-g++ fetch_intraday.cpp -o fetch_intraday -lcurl -pthread -std=c++17 -O2
+g++ fetch_intraday.cpp -o ../bin/fetch_intraday -lcurl -pthread -std=c++17 -O2
 ============================================================*/
 
 #include <iostream>
@@ -28,8 +28,8 @@ constexpr char INTERVAL[] = "5m";
 
 namespace fs = std::filesystem;
 
-const fs::path OUTPUT_FOLDER = "./output";
-const fs::path INPUT_FILE = "./input/tickers.csv";
+const fs::path OUTPUT_FOLDER = "../../output";
+const fs::path INPUT_FILE = "../../input/tickers.csv";
 
 std::mutex cout_mutex;
 
@@ -175,10 +175,10 @@ std::string format_timestamp(long timestamp)
 bool save_csv(const std::string& ticker,
               const std::string& raw_json)
 {
-    std::cout 
-    << "Parsing "
-    << ticker
-    << "\n";
+    // std::cout 
+    // << "Parsing "
+    // << ticker
+    // << "\n";
 
     try
     {
@@ -269,10 +269,10 @@ bool save_csv(const std::string& ticker,
         }
 
 
-        std::cout
-            << "Saved "
-            << filename
-            << "\n";
+        // std::cout
+        //     << "Saved "
+        //     << filename
+        //     << "\n";
 
 
         return true;
@@ -292,6 +292,25 @@ bool save_csv(const std::string& ticker,
 }
 
 
+int progress_bar(int current, int total, int bar_width = 50)
+{
+    float progress = (float)current / total;
+    int pos = bar_width * progress;
+
+    std::cout << "[";
+    for (int i = 0; i < bar_width; ++i)
+    {
+        if (i < pos) std::cout << "=";
+        else if (i == pos) std::cout << ">";
+        else std::cout << " ";
+    }
+    std::cout << "] " << int(progress * 100.0) << " %\r";
+    std::cout.flush();
+
+    return 0;
+}
+
+
 int main()
 {
     curl_global_init(CURL_GLOBAL_DEFAULT);
@@ -302,13 +321,14 @@ int main()
         << "Loaded "
         << tickers.size()
         << " tickers\n";
-
+    int indx = 0;
     for (const auto& ticker : tickers)
     {
-        std::cout
-            << "\nDownloading "
-            << ticker
-            << "...\n";
+        
+        //std::cout
+        //    << "\nDownloading "
+        //    << ticker
+        //    << "...\n";
 
 
         std::string url =
@@ -330,12 +350,14 @@ int main()
         }
 
 
-        std::cout
-            << "Downloaded "
-            << raw.size()
-            << " bytes\n";
+        // std::cout
+        //     << "Downloaded "
+        //     << raw.size()
+        //     << " bytes\n";
 
         save_csv(ticker,raw);
+        indx++;
+        progress_bar(indx,tickers.size());
     }
 
     curl_global_cleanup();

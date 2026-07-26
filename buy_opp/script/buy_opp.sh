@@ -1,11 +1,17 @@
+
+
 set -e
+
+# Determine the directory of the script and change to that directory
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd "$SCRIPT_DIR"
 
 START_TIME=$(date +%s)
 
 echo
-echo "   ======================================"
-echo "    Stock Buy Opportunity Scanner"
-echo "   ======================================"
+echo "======================================"
+echo " Stock Buy Opportunity Scanner"
+echo "======================================"
 echo
 
 echo "1. Updating current positions (tickers_current_positions.csv)..."
@@ -39,6 +45,12 @@ echo "5. Running C++ scanner..."
 cd ../cpp/bin
 ./buy_opp
 
+cd "$SCRIPT_DIR"
+
+echo "6. Creating LibreOffice report..."
+/usr/bin/python3 ../py/create_report.py
+
+
 END_TIME=$(date +%s)
 ELAPSED=$((END_TIME - START_TIME))
 
@@ -50,7 +62,9 @@ echo "    Output: output/summary_all.csv"
 echo "   ======================================"
 echo
 
-libreoffice ../../output/summary_all.csv &
+echo "7. Opening report in LibreOffice..."
+
+libreoffice ../output/summary_all.ods >/dev/null 2>&1 &
 
 read -p "   Press any key to continue..." -n1 -s
 echo

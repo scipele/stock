@@ -18,33 +18,33 @@ Run everything:
 ```text
 buy_opp/
 │
-├── script/                              # Workflow scripts
-│   ├── buy_opp.sh                       # Step 1: Main workflow controller
-│   ├── get_cur_pos_tickers.sh           # Step 2a: Extract Schwab positions
-│   └── combine_sort_tickers.sh          # Step 3: Combine and sort tickers
+├── script/                             # Workflow scripts
+│   ├── buy_opp.sh                      # Step 1: Main workflow controller
+│   ├── get_cur_pos_tickers.sh          # Step 2a: Extract Schwab positions
+│   └── combine_sort_tickers.sh         # Step 3: Combine and sort tickers
 │
-├── data/                                # Data files
-│   ├── tickers_current_positions.csv    # Step 2b: Current Schwab positions
-│   ├── tickers_s_p_500.csv              # Step 3a: S&P 500 ticker list
-│   ├── tickers_other.csv                # Step 3b: Additional tickers
-│   ├── tickers_combined.csv             # Step 3c: Final ticker
-│   └── fundamentals.csv                 # Step 4a: Financial data from Python
+├── data/                               # Data files
+│   ├── tickers_current_positions.csv   # Step 2b: Current Schwab positions
+│   ├── tickers_s_p_500.csv             # Step 3a: S&P 500 ticker list
+│   ├── tickers_other.csv               # Step 3b: Additional tickers
+│   ├── tickers_combined.csv            # Step 3c: Final ticker
+│   └── fundamentals.csv                # Step 4a: Financial data from Python
 │
-├── py/                                  # Python utilities
-│   └── get_financials.py                # Step 4: Update fundamentals.csv
+├── py/                                 # Python utilities
+│   └── get_financials.py               # Step 4: Update fundamentals.csv
 │
-├── cpp/                                 # C++ stock scanner
+├── cpp/                                # C++ stock scanner
 │   ├── bin/
-│   │   └── buy_opp                     # Step 5: Compiled scanner executable
+│   │   └── buy_opp                     # Step 5: Run Compiled scanner executable
 │   │
-│   ├── include/
+│   ├── include/                        # Header Files
 │   │   ├── analysis.h
 │   │   ├── fundamentals.h
 │   │   ├── scoring.h
 │   │   ├── yahoo.h
 │   │   └── summary.h
 │   │
-│   └── src/
+│   └── src/                            # C++ Source / Implementation Files
 │       ├── main.cpp                     
 │       ├── analysis.cpp
 │       ├── fundamentals.cpp
