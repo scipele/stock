@@ -9,7 +9,7 @@ OUTPUT_FILE="../data/tickers_combined.csv"
 mkdir -p "$(dirname "$OUTPUT_FILE")"
 
 # Combine files (skip first line of each), sort, remove duplicates, and add header
-echo "Ticker,Owned" > "$OUTPUT_FILE"
+echo "   Ticker,Owned" > "$OUTPUT_FILE"
 
 # Current positions
 tail -n +2 "$INPUT_FILE_A" |

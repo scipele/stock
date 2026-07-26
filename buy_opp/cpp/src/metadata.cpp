@@ -3,53 +3,74 @@
 #include <sstream>
 #include <algorithm>
 
-std::string clean_csv_field(std::string value)
-{
-    value.erase(std::remove(value.begin(),value.end(),'\r'),value.end());
-    value.erase(std::remove(value.begin(),value.end(),'\n'),value.end());
-    while(!value.empty() && value.front()=='"') value.erase(0,1);
-    while(!value.empty() && value.back()=='"') value.pop_back();
 
-    value.erase(std::remove(value.begin(),value.end(),'"'),value.end());
-    return value;
+std::string get_csv_field(std::stringstream& ss)
+{
+    std::string field;
+
+    if(ss.peek() == '"') {
+        ss.get();                       // Skip opening quote
+        std::getline(ss,field,'"');
+
+        if(ss.peek() == ',')
+            ss.get();                   // Skip comma after closing quote
+    } else {
+        std::getline(ss,field,',');
+    }
+
+    field.erase(
+        std::remove(field.begin(),field.end(),'\r'),
+        field.end()
+    );
+
+    field.erase(
+        std::remove(field.begin(),field.end(),'\n'),
+        field.end()
+    );
+
+    return field;
 }
 
 
-std::unordered_map<std::string,Metadata> load_metadata(const std::string& file){
-
-    std::unordered_map<std::string,Metadata> data;
+std::unordered_map<std::string,Metadata> load_metadata(const std::string& file)
+{
     std::ifstream in(file);
 
-    if(!in) return data;
+    if(!in)
+        return {};
 
+    // Count data rows (skip header)
+    size_t count = 0;
     std::string line;
+
+    getline(in,line);
+
+    while(getline(in,line))
+    {
+        if(!line.empty())
+            count++;
+    }
+
+    in.clear();
+    in.seekg(0);
+
+    std::unordered_map<std::string,Metadata> data;
+    // Reserve space in the unordered_map to avoid rehashing
+    data.reserve(count);
+
     getline(in,line); // header
 
-    while(getline(in,line)){
+    while(getline(in,line))
+    {
         std::stringstream ss(line);
-        std::string ticker;
-        std::string company;
-        std::string sector;
 
-        getline(ss,ticker,',');
-        getline(ss,company,',');
+        std::string ticker = get_csv_field(ss);
+        std::string company = get_csv_field(ss);
+        std::string sector = get_csv_field(ss);
 
-        getline(ss,sector,',');
-        company=clean_csv_field(company);
-        sector=clean_csv_field(sector);
+        if(!ticker.empty())
+            data[ticker] = {company,sector};
+    }
 
-        // sector.erase(
-        //     std::remove(sector.begin(),sector.end(),'\r'),
-        //     sector.end()
-        // );
-
-        // sector.erase(
-        //     std::remove(sector.begin(),sector.end(),'\n'),
-        //     sector.end()
-        // );
-
-        if(!ticker.empty()){
-            data[ticker]={company,sector};
-        }
-    } return data;
+    return data;
 }

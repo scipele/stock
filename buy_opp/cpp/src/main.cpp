@@ -24,13 +24,21 @@ g++ main.cpp analysis.cpp fundamentals.cpp metadata.cpp scoring.cpp summary.cpp 
 #include "../include/summary.hpp"
 #include "../include/metadata.hpp"
 
+struct FailedTicker
+{
+  std::string ticker;
+  std::string reason;
+};
+
+std::mutex failed_mutex;
+std::vector<FailedTicker> failed_tickers;
+
+
 namespace fs = std::filesystem;
 
 std::mutex progress_mutex;
 std::atomic<int> completed_count{0};
 std::mutex results_mutex;
-std::mutex failed_mutex;
-std::vector<std::string> failed_tickers;
 
 std::vector<StockResult> results;
 FundamentalsDB fundamentals;
@@ -112,7 +120,7 @@ void update_progress(
     int eta_sec = static_cast<int>(eta_seconds) % 60;
     std::lock_guard<std::mutex> lock(progress_mutex);
 
-    std::cout << "\r[";
+    std::cout << "   \r[";
 
     for (int i = 0; i < width; i++) {
         std::cout << (i < filled ? '#' : '-');
@@ -137,14 +145,22 @@ void update_progress(
 
 
 void process_stock(const std::string& ticker) {
-    // std::cout << "Processing " << ticker<< "\n";
+
     YahooStockData data = fetch_stock_data(ticker);
 
-    if(!data.valid) {
+    if(!data.valid)
+    {
         {
             std::lock_guard<std::mutex> lock(failed_mutex);
-            failed_tickers.push_back(ticker);
+
+            failed_tickers.push_back(
+                {
+                    ticker,
+                    "Insufficient history or invalid chart data"
+                }
+            );
         }
+
         return;
     }
 
@@ -167,7 +183,7 @@ void process_stock(const std::string& ticker) {
 
     {
         std::lock_guard<std::mutex> lock(results_mutex);
-        results.push_back(result);
+        results.emplace_back(std::move(result));
     }
     int done = ++completed_count;
 
@@ -175,11 +191,6 @@ void process_stock(const std::string& ticker) {
         done,
         total_tickers,
         start_time);
-
-    // std::cout << ticker
-    //           << " Score: "
-    //           << score.
-    //           << "\n";
 }
 
 
@@ -197,26 +208,29 @@ int main()
 
     auto tickers = load_tickers();
     total_tickers = tickers.size();
-
+    
+    // Use reserve to avoid multiple reallocations
+    results.reserve(total_tickers);
    
-    if(tickers.empty()) { std::cout << "No tickers found\n";
+    if(tickers.empty()) { std::cout << "   No tickers found\n";
         return 1;
     }
 
     fundamentals.load("../../data/fundamentals.csv");
 
-    std::cout << "Loaded "
+    std::cout << "   Loaded "
               << tickers.size()
               << " tickers\n\n";
 
     metadata=load_metadata("../../data/stock_metadata.csv");
 
-    std::cout << "Loaded metadata "
+    std::cout << "   Loaded metadata "
               << metadata.size()
               << " entries\n";
 
     const int max_threads = 10;
     std::vector<std::thread> threads;
+    threads.reserve(max_threads);
 
     for(const auto& ticker : tickers) {
         threads.emplace_back(
@@ -239,15 +253,22 @@ int main()
     std::cout << std::endl;
 
     // Print failed tickers
-    if (!failed_tickers.empty())
+    if(!failed_tickers.empty())
     {
-        std::cout << "\nFailed to get data for the following (" << failed_tickers.size() << " ea) tickers: ";
-        for (size_t i = 0; i < failed_tickers.size(); ++i)
+        std::cout
+            << "\nSkipped "
+            << failed_tickers.size()
+            << " tickers:\n";
+
+        for(const auto& failed : failed_tickers)
         {
-            if (i) std::cout << ", ";
-            std::cout << failed_tickers[i];
+            std::cout
+                << "  "
+                << failed.ticker
+                << " - "
+                << failed.reason
+                << "\n";
         }
-        std::cout << "\n";
     }
 
     generate_summary(
@@ -262,7 +283,7 @@ int main()
     auto elapsed =
         std::chrono::duration<double>(end_time - start_time).count();
 
-    std::cout << "\nCompleted in "
+    std::cout << "\n   Completed in "
             << std::fixed
             << std::setprecision(2)
             << elapsed

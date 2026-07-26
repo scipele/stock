@@ -3,9 +3,9 @@ set -e
 START_TIME=$(date +%s)
 
 echo
-echo "======================================"
-echo " Stock Buy Opportunity Scanner"
-echo "======================================"
+echo "   ======================================"
+echo "    Stock Buy Opportunity Scanner"
+echo "   ======================================"
 echo
 
 echo "1. Updating current positions (tickers_current_positions.csv)..."
@@ -13,7 +13,7 @@ echo "1. Updating current positions (tickers_current_positions.csv)..."
 
 echo
 echo "2. Combining ticker lists... (tickers_current_positions.csv, tickers_watchlist.csv, tickers_custom.csv)"
-echo "Output: tickers_combined.csv"
+echo "   Output: tickers_combined.csv"
 ./combine_sort_tickers.sh
 
 echo
@@ -43,10 +43,14 @@ END_TIME=$(date +%s)
 ELAPSED=$((END_TIME - START_TIME))
 
 echo
-echo "======================================"
-echo " Complete"
-echo " Runtime: ${ELAPSED} seconds"
-echo " Output: output/summary_all.csv"
-echo "======================================"
+echo "   ======================================"
+echo "    Complete"
+echo "    Runtime: ${ELAPSED} seconds"
+echo "    Output: output/summary_all.csv"
+echo "   ======================================"
 echo
-read -p "Press any key to continue..." -n1 -s
+
+libreoffice ../../output/summary_all.csv &
+
+read -p "   Press any key to continue..." -n1 -s
+echo

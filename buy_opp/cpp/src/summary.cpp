@@ -6,6 +6,30 @@
 #include <iomanip>
 
 
+std::string csv_escape(const std::string& value)
+{
+    std::string result = value;
+
+    if(result.find(',') != std::string::npos ||
+       result.find('"') != std::string::npos)
+    {
+        std::string escaped;
+
+        for(char c : result)
+        {
+            if(c == '"')
+                escaped += "\"\"";
+            else
+                escaped += c;
+        }
+
+        result = "\"" + escaped + "\"";
+    }
+
+    return result;
+}
+
+
 void generate_summary(
     const std::vector<StockResult>& stocks,
     const std::string& filename)
@@ -73,8 +97,8 @@ void generate_summary(
         out << rank++ << ","
             << (stock.owned ? "Y" : "") << ","
             << stock.ticker << ","
-            << "\"" << stock.company << "\","
-            << stock.sector << ","
+            << csv_escape(stock.company) << ","
+            << csv_escape(stock.sector) << ","
             << s.overall_score << ","
             << t.price << ","
             << t.previous_low << ","
@@ -101,7 +125,7 @@ void generate_summary(
 
 
     std::cout
-        << "Created "
+        << "   Created "
         << filename
         << "\n";
 }

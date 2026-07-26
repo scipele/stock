@@ -5,7 +5,7 @@
 #include <iostream>
 #include <sstream>
 #include <vector>
-
+#include <fstream>
 
 using json = nlohmann::json;
 
@@ -129,7 +129,9 @@ static bool parse_chart(
         auto low =
             quote["low"];
 
-
+        closes.reserve(close.size());
+        highs.reserve(high.size());
+        lows.reserve(low.size());
 
         for(size_t i=0;
             i<close.size();
@@ -164,67 +166,39 @@ static bool parse_chart(
         return false;
     }
 
-
-    return closes.size() > 30;
+    return closes.size() >= 30;
 }
 
 
-
-YahooStockData fetch_stock_data(
-    const std::string& ticker)
-{
+YahooStockData fetch_stock_data(const std::string& ticker) {
 
     YahooStockData result;
-
     result.ticker = ticker;
-
-
-
-    //
-    // Historical prices
-    //
 
     std::string chart_url =
         "https://query1.finance.yahoo.com/v8/finance/chart/"
         + ticker +
         "?range=1y&interval=1d";
 
-
-
-    std::string chart_raw =
-        fetch_url(chart_url);
-
-
+    std::string chart_raw = fetch_url(chart_url);
 
     if(chart_raw.size() < 1000)
+    {
         return result;
-
-
+    }
 
     try
     {
-
-        json chart =
-            json::parse(chart_raw);
-
-
+        json chart = json::parse(chart_raw);
 
         std::vector<double> closes;
         std::vector<double> highs;
         std::vector<double> lows;
 
-
-
-        if(!parse_chart(
-                chart,
-                closes,
-                highs,
-                lows))
+        if(!parse_chart(chart,closes,highs,lows))
         {
             return result;
         }
-
-
 
         result.technical =
             analyze_prices(
@@ -233,16 +207,17 @@ YahooStockData fetch_stock_data(
                 lows
             );
 
-
-        result.valid = true;
-
+        result.valid=true;
     }
-    catch(...)
+    catch(const std::exception& e)
     {
-
+        std::cout
+            << "\nFAIL "
+            << ticker
+            << ": "
+            << e.what()
+            << "\n";
     }
-
-
 
     return result;
 }
