@@ -66,11 +66,11 @@ def get_fundamentals(ticker):
 def main():
 
     tickers = load_tickers()
-    print(f"Loaded {len(tickers)} tickers")
+    print(f"   Loaded {len(tickers)} tickers")
     rows = []
 
     for i, ticker in enumerate(tickers, 1):
-        print(f"\rFetching {ticker} ({i}/{len(tickers)})",end="")
+        print(f"\r   Fetching {ticker} ({i}/{len(tickers)})",end="")
         data = get_fundamentals(ticker)
         rows.append(data)
 
