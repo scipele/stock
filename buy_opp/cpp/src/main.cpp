@@ -120,7 +120,7 @@ void update_progress(
     int eta_sec = static_cast<int>(eta_seconds) % 60;
     std::lock_guard<std::mutex> lock(progress_mutex);
 
-    std::cout << "   \r   [";
+    std::cout << "   \r   Progress [";
 
     for (int i = 0; i < width; i++) {
         std::cout << (i < filled ? '#' : '-');
@@ -201,8 +201,8 @@ int main()
     curl_global_init(CURL_GLOBAL_DEFAULT);
 
     std::cout 
-        << "\n   c++ Stock Buy Opportunity Calc / Generate .csv Summary\n"
-        <<   "   ======================================================\n\n";
+        << "   C++ Stock Buy Opportunity Calculator\n"
+        << "   ====================================\n";
 
     fs::create_directories("output");
 
@@ -220,7 +220,7 @@ int main()
 
     std::cout << "   Loaded "
               << tickers.size()
-              << " tickers\n\n";
+              << " tickers\n";
 
     metadata=load_metadata("../../data/stock_metadata.csv");
 

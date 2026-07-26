@@ -15,7 +15,6 @@ Run everything:
 ./script/buy_opp.sh
 
 ```text
-```text
 buy_opp/
 │
 ├── script/                             # Workflow scripts

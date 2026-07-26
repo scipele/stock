@@ -98,8 +98,9 @@ def main():
         writer.writerows(rows)
 
     print()
-    print("Created:")
-    print(OUTPUT_FILE)
+    print("   Created:")
+    print(f"   {os.path.abspath(OUTPUT_FILE)}")
+
 
 if __name__ == "__main__":
     main()

@@ -62,24 +62,24 @@ def save_metadata(metadata):
 
 
 def main():
-    print("\nUpdating Stock Metadata")
-    print("=======================")
+    print("\n   Updating Stock Metadata")
+    print("   =======================")
 
     tickers=load_tickers()
     metadata=load_metadata()
 
     missing=[t for t in tickers if t not in metadata]
 
-    print(f"Loaded tickers: {len(tickers)}")
-    print(f"Existing metadata: {len(metadata)}")
-    print(f"Missing metadata: {len(missing)}")
+    print(f"   Loaded tickers: {len(tickers)}")
+    print(f"   Existing metadata: {len(metadata)}")
+    print(f"   Missing metadata: {len(missing)}")
 
     if not missing:
-        print("Metadata already up to date")
+        print("   Metadata already up to date")
         return
 
     for i,ticker in enumerate(missing,1):
-        print(f"\rFetching {ticker} ({i}/{len(missing)})",end="")
+        print(f"\r   Fetching {ticker} ({i}/{len(missing)})",end="")
         metadata[ticker]=get_metadata(ticker)
         time.sleep(0.25)
 
@@ -87,8 +87,8 @@ def main():
 
     save_metadata(metadata)
 
-    print(f"Added {len(missing)} records")
-    print(f"Saved {METADATA_FILE}")
+    print(f"   Added {len(missing)} records")
+    print(f"   Saved {METADATA_FILE}")
 
 
 if __name__=="__main__":
