@@ -1,5 +1,7 @@
 set -e
 
+CUR_POS_TICKERS_FILE="../data/tickers_current_positions.csv"
+
 # Determine the directory of the script and change to that directory
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR"
@@ -14,6 +16,11 @@ echo
 
 echo "1. Updating current positions (tickers_current_positions.csv)..."
 ./get_cur_pos_tickers.sh
+
+# Replace odd ticher symbols with their correct versions (e.g., BRK.B -> BRK-B)
+sed -i 's/BRK.B/BRK-B/g' "$CUR_POS_TICKERS_FILE"
+sed -i 's/BRK.A/BRK-A/g' "$CUR_POS_TICKERS_FILE"
+
 
 echo
 echo "2. Combining ticker lists... (tickers_current_positions.csv, tickers_watchlist.csv, tickers_custom.csv)"
