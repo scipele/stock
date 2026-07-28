@@ -23,7 +23,7 @@ sed -i 's/BRK.A/BRK-A/g' "$CUR_POS_TICKERS_FILE"
 
 
 echo
-echo "2. Combining ticker lists... (tickers_current_positions.csv, tickers_watchlist.csv, tickers_custom.csv)"
+echo "2. Combining ticker lists... (tickers_current_positions.csv, tickers_sp_500.csv, tickers_other.csv)"
 echo "   Output: tickers_combined.csv"
 ./combine_sort_tickers.sh
 
