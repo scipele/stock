@@ -1,0 +1,17 @@
+#!/bin/bash
+set -e
+
+# ------------------------------------------------------------------
+# Intrinsic Value Opener
+# ------------------------------------------------------------------
+
+# Determine the directory of the script and change to that directory
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd "$SCRIPT_DIR"
+
+echo "Opening report in LibreOffice..."
+
+libreoffice ../output/summary_intrinsic.ods >/dev/null 2>&1 &
+
+read -p "   Press any key to continue..." -n1 -s
+echo
