@@ -14,8 +14,11 @@ echo " Stock Buy Opportunity Scanner"
 echo "======================================"
 echo
 
-echo "1. Updating current positions (tickers_current_positions.csv)..."
-./get_cur_pos_tickers.sh
+read -p "Would you like to update the current positions (recommended daily)? (y/n) " UPDATE_CUR_POSITIONS
+if [[ "$UPDATE_CUR_POSITIONS" == "y" ]]; then
+    echo "Updating current positions (tickers_current_positions.csv)..."
+    ./get_cur_pos_tickers.sh
+fi  
 
 # Replace odd ticher symbols with their correct versions (e.g., BRK.B -> BRK-B)
 sed -i 's/BRK.B/BRK-B/g' "$CUR_POS_TICKERS_FILE"
