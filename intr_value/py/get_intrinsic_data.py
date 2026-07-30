@@ -139,10 +139,10 @@ def get_data(ticker):
 
 
 def main():
-    print("=== Intrinsic Value – Data Gatherer (concurrent) ===")
+    print("   === Intrinsic Value – Data Gatherer (concurrent) ===")
     tickers = load_tickers(INPUT_FILE)
-    print(f"Loaded {len(tickers)} tickers")
-    print(f"Using {MAX_WORKERS} parallel workers\n")
+    print(f"   Loaded {len(tickers)} tickers")
+    print(f"   Using {MAX_WORKERS} parallel workers\n")
 
     rows = []
     completed = 0
