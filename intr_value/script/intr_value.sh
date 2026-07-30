@@ -56,6 +56,7 @@ if [[ "$UPDATE_DATA" == "y" || "$UPDATE_DATA" == "Y" ]]; then
 else
     echo "   → Skipping data update (using existing fundamentals_intrinsic.csv)"
 fi
+read -p "   Press any key to continue..." -n1 -s
 
 # ------------------------------------------------------------------
 # 3. C++ number crunching
@@ -79,6 +80,8 @@ echo
 echo "4. Creating LibreOffice report..."
 /usr/bin/python3 ../py/create_intrinsic_report.py
 
+read -p "   Press any key to continue..." -n1 -s
+
 END_TIME=$(date +%s)
 ELAPSED=$((END_TIME - START_TIME))
 
@@ -90,6 +93,8 @@ echo "    Output: output/summary_intrinsic.csv"
 echo "            output/summary_intrinsic.ods"
 echo "   ======================================"
 echo
+read -p "   Press any key to continue..." -n1 -s
+
 
 echo "5. Opening report in LibreOffice..."
 libreoffice ../output/summary_intrinsic.ods >/dev/null 2>&1 &
