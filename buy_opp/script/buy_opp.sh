@@ -14,9 +14,9 @@ echo " Stock Buy Opportunity Scanner"
 echo "======================================"
 echo
 
-read -p "Would you like to update the current positions (recommended daily)? (y/n) " UPDATE_CUR_POSITIONS
+read -p "1. Would you like to update the current positions (recommended daily)? (y/n) " UPDATE_CUR_POSITIONS
 if [[ "$UPDATE_CUR_POSITIONS" == "y" ]]; then
-    echo "Updating current positions (tickers_current_positions.csv)..."
+    echo "   Updating current positions (tickers_current_positions.csv)..."
     ./get_cur_pos_tickers.sh
 fi  
 
