@@ -75,6 +75,3 @@ echo
 echo "7. Opening report in LibreOffice..."
 
 libreoffice ../output/summary_all.ods >/dev/null 2>&1 &
-
-read -p "   Press any key to continue..." -n1 -s
-echo
