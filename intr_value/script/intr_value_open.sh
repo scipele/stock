@@ -12,6 +12,3 @@ cd "$SCRIPT_DIR"
 echo "Opening report in LibreOffice..."
 
 libreoffice ../output/summary_intrinsic.ods >/dev/null 2>&1 &
-
-read -p "   Press any key to continue..." -n1 -s
-echo

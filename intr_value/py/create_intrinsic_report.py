@@ -12,12 +12,12 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 CSV_FILE = os.path.join(
     BASE_DIR,
-    "../output/summary_all.csv"
+    "../output/summary_intrinsic.csv"
 )
 
 ODS_FILE = os.path.join(
     BASE_DIR,
-    "../output/summary_all.ods"
+    "../output/summary_intrinsic.ods"
 )
 
 
