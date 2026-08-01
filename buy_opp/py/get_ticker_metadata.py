@@ -1,11 +1,15 @@
 import csv
 import time
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 import yfinance as yf
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 TICKER_FILE = BASE_DIR / "data/tickers_combined.csv"
 METADATA_FILE = BASE_DIR / "data/stock_metadata.csv"
+
+NUM_WORKERS = 6
 
 # Sector-to-Number mapping dictionary
 SECTOR_MAP = {
@@ -25,6 +29,9 @@ SECTOR_MAP = {
 
 # Reverse mapping for writing reports later
 SECTOR_NAME_MAP = {v: k for k, v in SECTOR_MAP.items()}
+
+# Print lock to avoid terminal output overlapping from multiple threads
+print_lock = threading.Lock()
 
 def sector_to_code(sector_str):
     """Convert sector string to numeric code, default to 0 if unknown."""
@@ -47,7 +54,6 @@ def load_metadata():
         return metadata
     with open(METADATA_FILE, "r") as f:
         for row in csv.DictReader(f):
-            # Ensure Sector is parsed back as an integer if it exists
             if "Sector" in row and row["Sector"].isdigit():
                 row["Sector"] = int(row["Sector"])
             metadata[row["Ticker"]] = row
@@ -55,6 +61,7 @@ def load_metadata():
 
 def get_metadata(ticker):
     try:
+        # yfinance can be noisy or occasionally hit rate limits; brief sleep acts as a jitter
         info = yf.Ticker(ticker).info
         raw_sector = info.get("sector", "")
         sector_code = sector_to_code(raw_sector)
@@ -64,7 +71,8 @@ def get_metadata(ticker):
             "Sector": sector_code
         }
     except Exception:
-        print(f"\nFAILED {ticker}")
+        with print_lock:
+            print(f"\nFAILED {ticker}")
         return {
             "Ticker": ticker,
             "Company": "",
@@ -87,17 +95,42 @@ def main():
     tickers = load_tickers()
     metadata = load_metadata()
     missing = [t for t in tickers if t not in metadata]
+    
     print(f" Loaded unique tickers: {len(tickers)}")
     print(f" Existing metadata: {len(metadata)}")
     print(f" Missing metadata: {len(missing)}")
+    
     if not missing:
         print(" Metadata already up to date")
         return
-    for i, ticker in enumerate(missing, 1):
-        print(f"\r Fetching {ticker} ({i}/{len(missing)})", end="")
-        metadata[ticker] = get_metadata(ticker)
-        time.sleep(0.25)
-    print()
+
+    print(f" Starting download with {NUM_WORKERS} concurrent workers...\n")
+    
+    completed = 0
+    # Use ThreadPoolExecutor for high-performance concurrent I/O requests
+    with ThreadPoolExecutor(max_workers=NUM_WORKERS) as executor:
+        # Submit all tasks to the queue immediately
+        future_to_ticker = {executor.submit(get_metadata, ticker): ticker for ticker in missing}
+        
+        # Process results exactly as they complete, regardless of submission order
+        for future in as_completed(future_to_ticker):
+            ticker = future_to_ticker[future]
+            try:
+                result = future.result()
+                metadata[ticker] = result
+            except Exception as exc:
+                with print_lock:
+                    print(f"\n{ticker} generated an unexpected exception: {exc}")
+                metadata[ticker] = {"Ticker": ticker, "Company": "", "Sector": 0}
+            
+            completed += 1
+            with print_lock:
+                print(f"\r Progress ({completed}/{len(missing)}) - Handled {ticker:<6}", end="", flush=True)
+            
+            # Subtle delay to prevent hammering Yahoo Finance API too aggressively
+            time.sleep(0.05)
+
+    print("\n")
     save_metadata(metadata)
     print(f" Added {len(missing)} records")
     print(f" Saved {METADATA_FILE}")

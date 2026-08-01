@@ -204,8 +204,6 @@ int main()
         << "   C++ Stock Buy Opportunity Calculator\n"
         << "   ====================================\n";
 
-    fs::create_directories("output");
-
     auto tickers = load_tickers();
     total_tickers = tickers.size();
     
