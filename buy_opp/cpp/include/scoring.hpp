@@ -4,6 +4,8 @@
 #include "fundamentals.hpp"
 
 
+
+
 struct ScoreResult
 {
     double support_score = 0.0;

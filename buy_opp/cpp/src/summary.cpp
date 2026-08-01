@@ -98,7 +98,7 @@ void generate_summary(
             << (stock.owned ? "Y" : "") << ","
             << stock.ticker << ","
             << csv_escape(stock.company) << ","
-            << csv_escape(stock.sector) << ","
+            << csv_escape(std::to_string(stock.sector)) << ","
             << s.overall_score << ","
             << t.price << ","
             << t.previous_low << ","

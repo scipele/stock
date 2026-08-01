@@ -20,6 +20,22 @@ ODS_FILE = os.path.join(
     "../output/summary_all.ods"
 )
 
+# Numeric code to human-readable text mapping
+SECTOR_NAME_MAP = {
+    1: "Basic Materials",
+    2: "Communication Services",
+    3: "Consumer Cyclical",
+    4: "Consumer Defensive",
+    5: "Energy",
+    6: "Financial Services",
+    7: "Healthcare",
+    8: "Industrials",
+    9: "Real Estate",
+    10: "Sector",
+    11: "Technology",
+    12: "Utilities"
+}
+
 
 def prop(name,value):
     p = PropertyValue()
@@ -90,6 +106,30 @@ def main():
     end_col = cursor.RangeAddress.EndColumn
 
 
+    # --- Find and Translate the Sector Column ---
+    # Find which column contains the "Sector" header
+    sector_col_idx = None
+    for col in range(end_col + 1):
+        header_cell = sheet.getCellByPosition(col, 0)
+        if header_cell.getString() == "Sector":
+            sector_col_idx = col
+            break
+
+    # If the Sector column exists, update numeric values to text names
+    if sector_col_idx is not None:
+        for row in range(1, end_row + 1):  # Start at 1 to skip the header
+            cell = sheet.getCellByPosition(sector_col_idx, row)
+            # Read cell value (Calc treats numbers as floats)
+            cell_val = cell.getValue()
+            
+            # Map valid integer codes back to strings
+            if cell_val in SECTOR_NAME_MAP:
+                cell.setString(SECTOR_NAME_MAP[cell_val])
+            elif int(cell_val) in SECTOR_NAME_MAP:
+                cell.setString(SECTOR_NAME_MAP[int(cell_val)])
+    # --------------------------------------------
+
+
     # Freeze first row
     controller = doc.getCurrentController()
 
@@ -116,7 +156,7 @@ def main():
     db_range.AutoFilter = True
 
 
-    # Auto size columns
+    # Auto size columns (done after translation so width accounts for text length)
     columns = sheet.Columns
 
     for col in range(end_col + 1):
