@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 INPUT_FILE = "../data/tickers_combined.csv"
 OUTPUT_FILE = "../data/fundamentals.csv"
 
-NUM_WORKERS = 4
+NUM_WORKERS = 1
 
 
 def load_tickers():

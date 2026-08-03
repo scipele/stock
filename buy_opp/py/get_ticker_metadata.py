@@ -9,7 +9,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 TICKER_FILE = BASE_DIR / "data/tickers_combined.csv"
 METADATA_FILE = BASE_DIR / "data/stock_metadata.csv"
 
-NUM_WORKERS = 6
+NUM_WORKERS = 1
 
 # Sector-to-Number mapping dictionary
 SECTOR_MAP = {
