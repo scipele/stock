@@ -11,22 +11,22 @@ cd "$SCRIPT_DIR_A"
 # ==========================================
 # GENERAL QUESTIONS FOR ALL THREE SCRIPTS
 # ==========================================
-echo "========================================================================================================"
+echo "====================================================================================="
 echo " Gather User Input for All Three Programs"
-echo "=========================================================================================================="
+echo "====================================================================================="
 
 
-echo "   ====================== Program #1 - Buy Opportunity Questions ========================================="
+echo "   ================== Program #1 - Buy Opportunity Questions ======================="
 read -p "   1.1 update the current positions (recom daily)? (y/n) " UPDATE_CUR_POSITIONS
 read -p "   1.2 update fundamentals (recom daily)? (y/n) " UPDATE_FUNDAMENTALS
 read -p "   1.3 update Ticker Metadata (recom monthly)? (y/n) " UPDATE_TICKER_METADATA
 read -p "   1.4 run the C++ scanner? (y/n) " RUN_CPP_SCANNER
 echo 
-echo "   ====================== Program #2 - Intrinsic Value Questions ========================================="
+echo "   ================== Program #2 - Intrinsic Value Questions ======================="
 read -p "   2.1 Copy latest tickers_combined.csv from buy_opp? (y/n) " COPY_TICKERS
 read -p "   2.2 update intrinsic-value data (recom daily/weekly)? (y/n) " UPDATE_DATA
 echo
-echo "   ====================== Program #3 - Data Combination & Report Questions ==============================="
+echo "   ================== Program #3 - Data Combination & Report  ======================"
 read -p "   3.1 copy files from the other programs? (y/n): " COPY_FILES
 read -p "   3.2 run the C++ program to combine the files? (y/n): " RUN_CPP_COMBINER
 read -p "   3.3 create the LibreOffice report? (y/n): " CREATE_REPORT
@@ -48,8 +48,6 @@ echo
 echo "============================================"
 echo " Program #1 - Stock Buy Opportunity Scanner"
 echo "============================================"
-echo
-echo "   Starting Processing..."
 echo
 
 # ==========================================

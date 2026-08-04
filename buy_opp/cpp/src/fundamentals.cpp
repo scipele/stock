@@ -53,7 +53,7 @@ bool FundamentalsDB::load(
         data[ticker] = f;
     }
 
-    std::cout << "   Loaded "
+    std::cout << "       Loaded "
               << data.size()
               << " fundamentals\n";
 

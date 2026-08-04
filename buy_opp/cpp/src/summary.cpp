@@ -125,7 +125,7 @@ void generate_summary(
 
 
     std::cout
-        << "   Created "
+        << "       Created "
         << filename
         << "\n";
 }
