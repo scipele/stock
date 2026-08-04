@@ -811,11 +811,11 @@ void writeReport(
 
 
     cout
-    << "   Created "
+    << "       Created "
     << filename
     << " ("
     << list.size()
-    << "    stocks)"
+    << " stocks)"
     << endl;
 }
 
@@ -828,9 +828,9 @@ int main()
 {
 
     cout << endl;
-    cout << "   ==========================================" << endl;
-    cout << "    Intrinsic + Buy Opportunity Analyzer" << endl;
-    cout << "   ==========================================" << endl;
+    cout << "       ==========================================" << endl;
+    cout << "        Intrinsic + Buy Opportunity Analyzer" << endl;
+    cout << "       ==========================================" << endl;
     cout << endl;
 
 
@@ -841,7 +841,7 @@ int main()
     // Load configuration
     // --------------------------------------------------------
 
-    cout << "   Loading paths..." << endl;
+    cout << "       Loading paths..." << endl;
 
     loadPaths(
         "../data/paths.csv",
@@ -849,7 +849,7 @@ int main()
 
 
 
-    cout << "   Loading scoring weights..." << endl;
+    cout << "       Loading scoring weights..." << endl;
 
     loadWeights(
         "../data/overall_weights.csv",
@@ -859,31 +859,28 @@ int main()
 
     cout << endl;
 
-    cout << "Configuration:" << endl;
+    cout << "       Configuration:" << endl;
 
-    cout << "  Buy Weight:       "
+    cout << "          Buy Weight:       "
          << config.buyWeight
          << endl;
 
-    cout << "  Intrinsic Weight: "
+    cout << "          Intrinsic Weight: "
          << config.intrinsicWeight
          << endl;
 
-    cout << "  Consensus Bonus:  "
+    cout << "          Consensus Bonus:  "
          << config.consensusMax
          << endl;
 
-
     cout << endl;
-
-
 
     // --------------------------------------------------------
     // Load Buy Opportunity Data
     // --------------------------------------------------------
 
     cout
-    << "   Loading Buy Opportunity file..."
+    << "       Loading Buy Opportunity file..."
     << endl;
 
 
@@ -894,7 +891,7 @@ int main()
 
 
     cout
-    << "   Loaded "
+    << "       Loaded "
     << stocks.size()
     << " buy opportunity stocks"
     << endl;
@@ -906,7 +903,7 @@ int main()
     // --------------------------------------------------------
 
     cout
-    << "   Loading Intrinsic Value file..."
+    << "       Loading Intrinsic Value file..."
     << endl;
 
 
@@ -917,7 +914,7 @@ int main()
 
 
     cout
-    << "   Combined universe: "
+    << "       Combined universe: "
     << stocks.size()
     << " stocks"
     << endl;
@@ -931,7 +928,7 @@ int main()
     cout << endl;
 
     cout
-    << "   Calculating scores..."
+    << "       Calculating scores..."
     << endl;
 
 
@@ -939,42 +936,28 @@ int main()
         stocks,
         config);
 
-
-
     // --------------------------------------------------------
     // Write Output
     // --------------------------------------------------------
 
     cout
-    << "   Writing report..."
+    << "       Writing report..."
     << endl;
-
 
     writeReport(
         config.outputFile,
         stocks);
-
-
-
     cout << endl;
 
-    cout
-    << "   ==========================================" 
-    << endl;
+    cout << "       ==========================================" 
+         << endl;
 
-    cout
-    << "   Complete"
-    << endl;
+    cout << "       Complete, "
+         << " Output: "
+         << config.outputFile
+         << endl;
 
-    cout
-    << "    Output: "
-    << config.outputFile
-    << endl;
-
-    cout
-    << "   ==========================================" 
-    << endl;
-
-
-    return 0;
+    cout << "       ==========================================" 
+         << endl;
+         return 0;
 }

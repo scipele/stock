@@ -139,10 +139,10 @@ def get_data(ticker):
 
 
 def main():
-    print("   === Intrinsic Value – Data Gatherer (concurrent) ===")
+    print("      === Intrinsic Value – Data Gatherer (concurrent) ===")
     tickers = load_tickers(INPUT_FILE)
-    print(f"   Loaded {len(tickers)} tickers")
-    print(f"   Using {MAX_WORKERS} parallel workers\n")
+    print(f"      Loaded {len(tickers)} tickers")
+    print(f"      Using {MAX_WORKERS} parallel workers\n")
 
     rows = []
     completed = 0
@@ -157,14 +157,14 @@ def main():
                 data = future.result()
                 rows.append(data)
             except Exception as e:
-                print(f"\n   {ticker}: exception {e}")
+                print(f"\n      {ticker}: exception {e}")
                 rows.append({
                     "Ticker": ticker,
                     "DataQuality": "fetch_failed",
                     "FetchedAt": datetime.now().isoformat(timespec="seconds"),
                 })
 
-            print(f"\r   [{completed:3d}/{len(tickers)}] last: {ticker:<8}", end="", flush=True)
+            print(f"\r      [{completed:3d}/{len(tickers)}] last: {ticker:<8}", end="", flush=True)
 
     print("\n")
 
@@ -190,8 +190,8 @@ def main():
         writer.writeheader()
         writer.writerows(rows)
 
-    print(f"Created: {os.path.abspath(OUTPUT_FILE)}")
-    print(f"Rows written: {len(rows)}")
+    print(f"      Created: {os.path.abspath(OUTPUT_FILE)}")
+    print(f"      Rows written: {len(rows)}")
 
 
 if __name__ == "__main__":

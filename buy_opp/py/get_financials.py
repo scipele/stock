@@ -76,7 +76,7 @@ def main():
 
     tickers = load_tickers()
 
-    print(f"   Loaded {len(tickers)} tickers")
+    print(f"       Loaded {len(tickers)} tickers")
 
     rows = []
 
@@ -97,7 +97,7 @@ def main():
             completed += 1
 
             print(
-                f"\r   Progress: {completed}/{total}",
+                f"\r       Progress: {completed}/{total}",
                 end="",
                 flush=True
             )
@@ -126,8 +126,8 @@ def main():
         writer.writerows(rows)
 
     print()
-    print("   Created:")
-    print(f"   {os.path.abspath(OUTPUT_FILE)}")
+    print("       Created:")
+    print(f"       {os.path.abspath(OUTPUT_FILE)}")
 
 
 if __name__ == "__main__":

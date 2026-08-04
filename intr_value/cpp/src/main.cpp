@@ -10,12 +10,12 @@ int main() {
     const std::string inputPath  = "../../data/fundamentals_intrinsic.csv";
     const std::string outputPath = "../../output/summary_intrinsic.csv";
 
-    std::cout << "=== Intrinsic Value – C++ Engine ===\n";
+    std::cout << "       === Intrinsic Value – C++ Engine ===\n";
 
     auto t0 = std::chrono::steady_clock::now();
 
     auto stocks = loadFundamentals(inputPath);
-    std::cout << "Loaded " << stocks.size() << " tickers\n";
+    std::cout << "       Loaded " << stocks.size() << " tickers\n";
 
     calculateIntrinsicValues(stocks);
 
@@ -23,7 +23,7 @@ int main() {
 
     auto t1 = std::chrono::steady_clock::now();
     double elapsed = std::chrono::duration<double>(t1 - t0).count();
-    std::cout << "Finished in " << elapsed << " seconds\n";
+    std::cout << "       Finished in " << elapsed << " seconds\n";
 
     return 0;
 }

@@ -360,5 +360,5 @@ void writeSummary(const std::vector<StockData>& stocks, const std::string& path)
             << s.dataQuality << "\n";
     }
 
-    std::cout << "Wrote " << rank << " valid stocks → " << path << "\n";
+    std::cout << "       Wrote " << rank << " valid stocks → " << path << "\n";
 }

@@ -72,7 +72,7 @@ def get_metadata(ticker):
         }
     except Exception:
         with print_lock:
-            print(f"\nFAILED {ticker}")
+            print(f"\n    FAILED {ticker}")
         return {
             "Ticker": ticker,
             "Company": "",
@@ -90,21 +90,21 @@ def save_metadata(metadata):
         writer.writerows(rows)
 
 def main():
-    print("\n   Updating Stock Metadata")
-    print("   =======================")
+    print("\n       Updating Stock Metadata")
+    print("       =======================")
     tickers = load_tickers()
     metadata = load_metadata()
     missing = [t for t in tickers if t not in metadata]
     
-    print(f"   Loaded unique tickers: {len(tickers)}")
-    print(f"   Existing metadata: {len(metadata)}")
-    print(f"   Missing metadata: {len(missing)}")
+    print(f"       Loaded unique tickers: {len(tickers)}")
+    print(f"       Existing metadata: {len(metadata)}")
+    print(f"       Missing metadata: {len(missing)}")
     
     if not missing:
-        print("   Metadata already up to date")
+        print("       Metadata already up to date")
         return
 
-    print(f"   Starting download with {NUM_WORKERS} concurrent workers...\n")
+    print(f"       Starting download with {NUM_WORKERS} concurrent workers...\n")
     
     completed = 0
     # Use ThreadPoolExecutor for high-performance concurrent I/O requests
@@ -125,15 +125,15 @@ def main():
             
             completed += 1
             with print_lock:
-                print(f"\r Progress ({completed}/{len(missing)}) - Handled {ticker:<6}", end="", flush=True)
+                print(f"\r       Progress ({completed}/{len(missing)}) - Handled {ticker:<6}", end="", flush=True)
             
             # Subtle delay to prevent hammering Yahoo Finance API too aggressively
             time.sleep(0.05)
 
     print("\n")
     save_metadata(metadata)
-    print(f" Added {len(missing)} records")
-    print(f" Saved {METADATA_FILE}")
+    print(f"       Added {len(missing)} records")
+    print(f"       Saved {METADATA_FILE}")
 
 if __name__ == "__main__":
     main()

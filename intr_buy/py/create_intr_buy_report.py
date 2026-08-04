@@ -40,7 +40,7 @@ def prop(name, value):
 
 def main():
 
-    print("   Starting LibreOffice report creation...")
+    print("       Starting LibreOffice report creation...")
 
 
     subprocess.Popen(
@@ -232,7 +232,7 @@ def main():
 
 
     print(
-        f"   Created: {ODS_FILE}"
+        f"       Created: {ODS_FILE}"
     )
 
 
