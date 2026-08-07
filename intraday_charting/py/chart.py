@@ -155,7 +155,7 @@ def create_chart(indx, file_count, csv_file, days_to_plot, schwab_prices, schwab
     # Look up the automated entry price using our mapped dictionary
     entry_price = schwab_prices.get(ticker, None)
     if entry_price is not None:
-        print(f"Processed {indx} of {file_count}")
+        print(f"\rProcessed {indx} of {file_count}", end="\r")
 
     # Read CSV
     df = pd.read_csv(
