@@ -2,7 +2,7 @@
 
 # Target files and directories
 TICKER_FILE="/home/dev/stock/intraday_charting/input/tickers.csv"
-DATA_DIR="/home/dev/stock/intraday_charting/output"
+OUTPUT_DIR="/home/dev/stock/intraday_charting/output"
 CHART_DIR="/home/dev/stock/intraday_charting/charts"
 DOWNLOAD_DIR="$HOME/Downloads"
 TOP_BUY_OPP_RANK_FILE="/home/dev/stock/buy_opp/output/summary_all.csv"
@@ -93,8 +93,8 @@ print_indented_list() {
 # 1. Clean old data & charts
 # ------------------------------------------------------------------
 echo "1. Cleaning up old data and charts..."
-rm -f "$DATA_DIR"/*
-rm -f "$CHART_DIR"/*
+rm -f "$OUTPUT_DIR"/*.csv
+rm -f "$CHART_DIR"/*.png
 
 
 # ------------------------------------------------------------------
