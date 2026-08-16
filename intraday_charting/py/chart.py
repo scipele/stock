@@ -449,20 +449,24 @@ def create_chart(indx, file_count, csv_file, days_to_plot, schwab_prices, schwab
     # Explicitly force our calculated positions and labels to overwrite the bottom volume axis
     axlist[2].set_xticks(tick_positions)
     axlist[2].set_xticklabels(tick_labels, rotation=90, fontsize=9)
-    
-    # Place legend in the left margin of the figure
+
+    # Remove the legend that mplfinance automatically creates
+    if axlist[0].get_legend() is not None:
+        axlist[0].get_legend().remove()
+
+    # Now place your custom legend in the left margin
     handles, labels = axlist[0].get_legend_handles_labels()
     fig.legend(
         handles, labels,
         loc='upper left',
-        bbox_to_anchor=(0.01, 0.87),   # figure coordinates (0–1)
+        bbox_to_anchor=(0.01, 0.87),
         fontsize=8.5,
         framealpha=0.92,
         borderpad=0.3,
         handlelength=1.3,
         labelspacing=0.3
     )
-
+    
     # --- Make extra room at the bottom for rotated x-labels + notes ---
     fig.subplots_adjust(bottom=0.28)   # increased from 0.20 / 0.22
 
