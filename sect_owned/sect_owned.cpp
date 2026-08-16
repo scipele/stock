@@ -87,5 +87,9 @@ int main() {
     }
     std::cout << "+-------------------------------+-------+" << std::endl;
 
+    // pause the program to view the output before it closes
+    std::cout << "Press Enter to exit...";
+    std::cin.get();
+
     return 0;
 }
