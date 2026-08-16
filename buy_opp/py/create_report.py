@@ -31,9 +31,8 @@ SECTOR_NAME_MAP = {
     7: "Healthcare",
     8: "Industrials",
     9: "Real Estate",
-    10: "Sector",
-    11: "Technology",
-    12: "Utilities"
+    10: "Technology",
+    11: "Utilities"
 }
 
 
