@@ -101,6 +101,7 @@ rm -f "$CHART_DIR"/*
 # 2. Build the ticker list
 # ------------------------------------------------------------------
 echo
+echo
 echo "2. Assemble Tickers to Chart"
 tickers=()
 prev_tickers=""
@@ -230,13 +231,13 @@ joined=$(IFS=,; echo "${sorted_tickers[*]}")
 print_indented_list "        " "$joined"
 echo
 
-read -p "        Proceed with these tickers? [Y/n]: " proceed
-proceed=${proceed:-Y}
-
-if [[ ! "$proceed" =~ ^[Yy]$ ]]; then
-    echo "        Aborted by user."
-    exit 0
-fi
+# read -p "        Proceed with these tickers? [Y/n]: " proceed
+# proceed=${proceed:-Y}
+# 
+# if [[ ! "$proceed" =~ ^[Yy]$ ]]; then
+#     echo "        Aborted by user."
+#     exit 0
+# fi
 
 # Write the cleaned list back to the ticker file
 {
@@ -249,20 +250,26 @@ echo "        Tickers saved to $TICKER_FILE"
 # ------------------------------------------------------------------
 # 6. Prompt for number of days
 # ------------------------------------------------------------------
-read -p "   3. Enter how many days to include on the chart: " chart_days
+echo
+echo
+read -p "3. Enter how many days to include on the chart: " chart_days
 
 # ------------------------------------------------------------------
 # 7. Fetch data (C++)
 # ------------------------------------------------------------------
-echo "      Fetching intraday data..."
+echo
+echo
+echo "4. C++ Fetching intraday data..."
 cd /home/dev/stock/intraday_charting/cpp/bin || exit 1
 ./fetch_intraday
 
 # ------------------------------------------------------------------
 # 8. Generate charts (Python)
 # ------------------------------------------------------------------
+echo
+echo
 if [[ $? -eq 0 ]]; then
-    echo "Generating charts for $chart_days days..."
+    echo "5. Run Python Script: Generating charts for $chart_days days..."
     /home/dev/py/.venv/bin/python /home/dev/stock/intraday_charting/py/chart.py --days "$chart_days"
 else
     echo "Error: C++ data fetch failed. Skipping chart generation."
@@ -272,17 +279,19 @@ fi
 # ------------------------------------------------------------------
 # 9. Open charts gallery
 # ------------------------------------------------------------------
-echo "Opening charts gallery..."
+echo
+echo
+echo "6. Opening charts gallery..."
 if [[ -d "$CHART_DIR" ]]; then
     gthumb "$CHART_DIR"/*.png &
     gsettings set org.gnome.gthumb.browser sort-type 'name' 2>/dev/null
 else
-    echo "Error: Chart directory not found."
+    echo "   Error: Chart directory not found."
 fi
 
 # ------------------------------------------------------------------
 # 10. Pause
 # ------------------------------------------------------------------
-read -n 1 -s -r -p "Press any key to close..."
 echo
-echo "Process complete!"
+echo
+read -n 1 -s -r -p "Press any key to close..."

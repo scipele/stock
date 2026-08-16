@@ -297,7 +297,7 @@ int progress_bar(int current, int total, int bar_width = 50)
     float progress = (float)current / total;
     int pos = bar_width * progress;
 
-    std::cout << "[";
+    std::cout << "   [";
     for (int i = 0; i < bar_width; ++i)
     {
         if (i < pos) std::cout << "=";
@@ -318,7 +318,7 @@ int main()
     auto tickers = load_tickers();
 
     std::cout
-        << "Loaded "
+        << "   Loaded "
         << tickers.size()
         << " tickers\n";
     int indx = 0;
@@ -350,16 +350,13 @@ int main()
         }
 
 
-        // std::cout
-        //     << "Downloaded "
-        //     << raw.size()
-        //     << " bytes\n";
-
         save_csv(ticker,raw);
         indx++;
         progress_bar(indx,tickers.size());
     }
 
+    std::cout << std::endl;
+    
     curl_global_cleanup();
 
     return 0;

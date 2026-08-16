@@ -1,7 +1,7 @@
-import logging
 import argparse
 import pandas as pd
 import numpy as np
+import yfinance as yf
 import mplfinance as mpf
 import re
 import matplotlib.pyplot as plt
@@ -10,13 +10,76 @@ from pathlib import Path
 # --- EXCLUSION FILTERS CONFIGURED AT THE TOP ---
 EXCLUDE_NAMES_CONTAINING = r"etf|fund|money|adm"
 
-# Silence the matplotlib font manager warnings specifically
+import warnings
+warnings.filterwarnings("ignore")
+
+import logging
 logging.getLogger('matplotlib.font_manager').setLevel(logging.ERROR)
+logging.getLogger('matplotlib').setLevel(logging.ERROR)
+
 
 INPUT_FOLDER = Path("/home/dev/stock/intraday_charting/output")
 CHART_FOLDER = Path("/home/dev/stock/intraday_charting/charts")
 # Absolute Schwab download path
 SCHWAB_FOLDER = Path("/home/ts/Downloads")
+
+
+
+def get_50day_ma_series(ticker: str, target_index: pd.DatetimeIndex) -> pd.Series | None:
+    """
+    Fetch daily data, compute 50-day SMA, and align it to the
+    intraday index (forward-filled so it stays constant within each day).
+    """
+    try:
+        daily = yf.download(
+            ticker,
+            period="120d",          # safe buffer for 50 trading days
+            interval="1d",
+            progress=False,
+            auto_adjust=True,
+            threads=False,
+        )
+        if daily.empty or len(daily) < 50:
+            return None
+
+        # Handle possible MultiIndex columns from yfinance
+        if isinstance(daily.columns, pd.MultiIndex):
+            close = daily["Close"].iloc[:, 0]
+        else:
+            close = daily["Close"]
+
+        # True 50-day SMA on daily closes
+        sma50 = close.rolling(window=50, min_periods=50).mean()
+
+        # Align to the intraday timestamps (forward-fill so the line
+        # stays flat within each trading day and steps on new days)
+        aligned = sma50.reindex(target_index, method="ffill")
+
+        # Drop any leading NaNs that couldn't be filled
+        if aligned.isna().all():
+            return None
+        return aligned
+
+    except Exception as e:
+        print(f"{ticker}: could not compute 50-day MA series ({e})")
+        return None
+
+
+def add_vwap(df: pd.DataFrame) -> pd.Series:
+    """Daily VWAP that resets each trading day."""
+    df = df.copy()
+    df['date'] = df.index.date
+    df['tp'] = (df['High'] + df['Low'] + df['Close']) / 3
+    df['tp_vol'] = df['tp'] * df['Volume']
+    df['cum_tp_vol'] = df.groupby('date')['tp_vol'].cumsum()
+    df['cum_vol'] = df.groupby('date')['Volume'].cumsum()
+    return df['cum_tp_vol'] / df['cum_vol']
+
+
+def add_ema(df: pd.DataFrame, length: int = 9) -> pd.Series:
+    """EMA on Close."""
+    return df['Close'].ewm(span=length, adjust=False).mean()
+
 
 def find_schwab_data():
     """
@@ -36,7 +99,8 @@ def find_schwab_data():
             
         # Get the latest file automatically by modification timestamp
         latest_file = max(schwab_files, key=lambda f: f.stat().st_mtime)
-        print(f"Loading metadata from newest Schwab export: {latest_file.name}")
+        print(f"\n   Loading metadata from newest Schwab export: {latest_file.name}\n")
+
         
         # Schwab files have a text header row before the table structure.
         with open(latest_file, "r") as f:
@@ -90,43 +154,47 @@ def find_schwab_data():
         print(f"Error parsing Schwab file: {e}")
         return {}, {}
 
-def find_swing_levels(df, previous_day_high, previous_day_low):
+def find_swing_levels(df, previous_day_high, previous_day_low, lookback=3):
+    """
+    Find the most recent swing high and swing low that also satisfy:
+    - Swing High > Previous Day High
+    - Swing Low  ≤ Previous Day Low
+    """
     swing_high = None
     swing_low = None
-    lookback = 3 # candles on each side
-    
-    # Search backward, skipping newest candles
-    for i in range(len(df)-lookback-1, lookback, -1):
+
+    if previous_day_high is None or previous_day_low is None:
+        return None, None
+
+    # Search from newest to oldest, skip the very latest candles
+    for i in range(len(df) - lookback - 1, lookback, -1):
         high = df["High"].iloc[i]
-        low = df["Low"].iloc[i]
-        
-        # Swing high:
-        # higher than 3 candles before and after
+        low  = df["Low"].iloc[i]
+
+        left_highs  = df["High"].iloc[i - lookback : i]
+        right_highs = df["High"].iloc[i + 1 : i + lookback + 1]
+        left_lows   = df["Low"].iloc[i - lookback : i]
+        right_lows  = df["Low"].iloc[i + 1 : i + lookback + 1]
+
+        # Swing High: local pivot AND higher than previous day high
         if swing_high is None:
-            left_highs = df["High"].iloc[i-lookback:i]
-            right_highs = df["High"].iloc[i+1:i+lookback+1]
-            if (
-                high > left_highs.max() and 
+            if (high > left_highs.max() and 
                 high > right_highs.max() and 
-                high > previous_day_high
-            ):
+                high > previous_day_high):
                 swing_high = high
-                
-        # Swing low:
+
+        # Swing Low: local pivot AND at or below previous day low
         if swing_low is None:
-            left_lows = df["Low"].iloc[i-lookback:i]
-            right_lows = df["Low"].iloc[i+1:i+lookback+1]
-            if (
-                low < left_lows.min() and 
+            if (low < left_lows.min() and 
                 low < right_lows.min() and 
-                low < previous_day_low
-            ):
+                low <= previous_day_low):
                 swing_low = low
-                
-        if swing_high and swing_low:
+
+        if swing_high is not None and swing_low is not None:
             break
-            
+
     return swing_high, swing_low
+
 
 def create_chart(indx, file_count, csv_file, days_to_plot, schwab_prices, schwab_names):
     ticker = csv_file.stem.upper()
@@ -155,7 +223,7 @@ def create_chart(indx, file_count, csv_file, days_to_plot, schwab_prices, schwab
     # Look up the automated entry price using our mapped dictionary
     entry_price = schwab_prices.get(ticker, None)
     if entry_price is not None:
-        print(f"\rProcessed {indx} of {file_count}", end="\r")
+        print(f"\r   Processed {indx} of {file_count}", end="\r")
 
     # Read CSV
     df = pd.read_csv(
@@ -171,24 +239,23 @@ def create_chart(indx, file_count, csv_file, days_to_plot, schwab_prices, schwab
         print(f"{ticker}: No data available, skipping chart")
         return
 
-    # Most recent trading day
-    last_day = df.index[-1].date()
-    recent_day = df[ df.index.date == last_day ]
-    previous_day_high = recent_day["High"].max()
-    previous_day_low = recent_day["Low"].min()
-    swing_high, swing_low = find_swing_levels(
-        df, previous_day_high, previous_day_low
-    )
-    #print(
-    #    f"{ticker}: "
-    #    f"Swing High={swing_high}, "
-    #    f"Swing Low={swing_low}"
-    #)
-    #print(
-    #    f"{ticker}: "
-    #    f"Day High={previous_day_high:.2f}, "
-    #    f"Day Low={previous_day_low:.2f} "
-    #)
+    # -------------------------------------------------
+    # Correct Previous Day High / Low
+    # -------------------------------------------------
+    # Previous Day High / Low
+    unique_days = sorted(df.index.normalize().unique())
+
+    if len(unique_days) >= 2:
+        previous_trading_day = unique_days[-2]
+        prev_day_mask = df.index.normalize() == previous_trading_day
+        previous_day_high = df.loc[prev_day_mask, "High"].max()
+        previous_day_low  = df.loc[prev_day_mask, "Low"].min()
+    else:
+        previous_day_high = None
+        previous_day_low  = None
+
+    # Swing levels with your required constraints
+    swing_high, swing_low = find_swing_levels(df, previous_day_high, previous_day_low)
     
     # Rename columns to mplfinance format
     df.rename(
@@ -207,6 +274,15 @@ def create_chart(indx, file_count, csv_file, days_to_plot, schwab_prices, schwab
     last_x_days = unique_days[-days_to_plot:]
     day_mask = df.index.normalize().isin(last_x_days)
     df_filtered = df[day_mask].copy() 
+
+    # --- Key indicators ---
+    ma50_series = get_50day_ma_series(ticker, df_filtered.index)
+    vwap = add_vwap(df_filtered)
+    ema9 = add_ema(df_filtered, length=9)
+
+    # Split EMA into rising / falling for color
+    ema_up = ema9.where(ema9 >= ema9.shift(1))
+    ema_down = ema9.where(ema9 < ema9.shift(1))
     
     # --- AUTOMATED TICKSCALE WITH PANDAS INT RESOLUTION FIX ---
     df_filtered['date_str'] = df_filtered.index.strftime('%Y-%m-%d')
@@ -287,9 +363,56 @@ def create_chart(indx, file_count, csv_file, days_to_plot, schwab_prices, schwab
             )
         )
 
+    # 50-day MA
+    if ma50_series is not None:
+        levels.append(
+            mpf.make_addplot(
+                ma50_series,
+                color='magenta',
+                width=1.6,
+                label='50-day MA'
+            )
+        )
+
+    # VWAP
+    levels.append(
+        mpf.make_addplot(
+            vwap,
+            color='cyan',
+            width=1.4,
+            label='VWAP'
+        )
+    )
+
+    # 9 EMA - rising (green)
+    levels.append(
+        mpf.make_addplot(
+            ema_up,
+            color='lime',
+            width=1.3,
+            label='9 EMA ↑'
+        )
+    )
+
+    # 9 EMA - falling (red)
+    levels.append(
+        mpf.make_addplot(
+            ema_down,
+            color='red',
+            width=1.3,
+            label='9 EMA ↓'
+        )
+    )
+    
     # Extract active numeric values for the Y-Axis price ticks
     active_prices = [p for p in [swing_high, swing_low, previous_day_high, previous_day_low, entry_price] if p is not None]
-    
+
+    if ma50_series is not None:
+        active_prices.extend([ma50_series.min(), ma50_series.max()])
+
+    active_prices.extend([vwap.min(), vwap.max(), ema9.min(), ema9.max()])
+
+        
     # 4. Pass cleanly to mpf.plot and use returnfig to render legend
     fig, axlist = mpf.plot(
         df_filtered,
@@ -301,7 +424,7 @@ def create_chart(indx, file_count, csv_file, days_to_plot, schwab_prices, schwab
         ylabel_lower="Volume",
         mav=(days_to_plot, 50),
         addplot=levels,
-        figsize=(14, 8),
+        figsize=(18, 14),
         warn_too_much_data=5000,
         hlines=dict(hlines=active_prices, colors='none'),
         returnfig=True
@@ -315,9 +438,11 @@ def create_chart(indx, file_count, csv_file, days_to_plot, schwab_prices, schwab
     )
     
     # FIXED: Pushed X coordinate out to 0.28 to make clean room for the wider text layout
+    # Company name + chart info — right aligned
     fig.text(
-        0.28, 0.94, sub_title_string,
-        fontsize=14, weight='normal', color='#444444', ha='left', va='center'
+        0.98, 0.94, sub_title_string,
+        fontsize=14, weight='normal', color='#444444',
+        ha='right', va='center'
     )
     # -----------------------------------------------------------------
 
@@ -325,9 +450,44 @@ def create_chart(indx, file_count, csv_file, days_to_plot, schwab_prices, schwab
     axlist[2].set_xticks(tick_positions)
     axlist[2].set_xticklabels(tick_labels, rotation=90, fontsize=9)
     
-    # Clean up and draw legend on the main candle axis container safely
-    axlist[0].legend(loc="upper left", fontsize=10)
-    
+    # Place legend in the left margin of the figure
+    handles, labels = axlist[0].get_legend_handles_labels()
+    fig.legend(
+        handles, labels,
+        loc='upper left',
+        bbox_to_anchor=(0.01, 0.87),   # figure coordinates (0–1)
+        fontsize=8.5,
+        framealpha=0.92,
+        borderpad=0.3,
+        handlelength=1.3,
+        labelspacing=0.3
+    )
+
+    # --- Make extra room at the bottom for rotated x-labels + notes ---
+    fig.subplots_adjust(bottom=0.28)   # increased from 0.20 / 0.22
+
+    notes = (
+        "50-day MA     → Longer-term trend. Price above = bullish bias, below = bearish bias.\n"
+        "VWAP          → Volume Weighted Average Price (today's fair value). "
+        "Above = buyers in control, below = sellers in control.\n"
+        "9 EMA         → Short-term trend. Green = rising (bullish), Red = falling (bearish).\n"
+        "Swing High/Low→ Recent significant peaks & troughs used as resistance/support.\n"
+        "Prev Day H/L  → Previous trading day's high & low – common intraday reaction levels.\n"
+        "Entry Price   → Your average cost basis (from Schwab). Purple dot marks your entry."
+    )
+
+    fig.text(
+        0.02, 0.01,                 # left side, very bottom
+        notes,
+        ha='left',
+        va='bottom',
+        fontsize=7,
+        family='monospace',
+        linespacing=1.35,
+        color='#222222',
+        bbox=dict(boxstyle='round,pad=0.4', facecolor='#f8f8f8', edgecolor='#cccccc', alpha=0.95)
+    )
+
     # Save chart image canvas safely
     fig.savefig(CHART_FOLDER / f"{ticker.lower()}.png", bbox_inches='tight')
     
