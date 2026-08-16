@@ -239,20 +239,34 @@ def create_chart(indx, file_count, csv_file, days_to_plot, schwab_prices, schwab
         print(f"{ticker}: No data available, skipping chart")
         return
 
-    # -------------------------------------------------
-    # Correct Previous Day High / Low
-    # -------------------------------------------------
     # Previous Day High / Low
+    # -------------------------------------------------
+    # When the market is closed (weekend / after-hours),
+    # the most recent day in the data IS the previous trading day.
+    # When the market is open, the previous day is the one before it.
+
     unique_days = sorted(df.index.normalize().unique())
 
-    if len(unique_days) >= 2:
-        previous_trading_day = unique_days[-2]
-        prev_day_mask = df.index.normalize() == previous_trading_day
-        previous_day_high = df.loc[prev_day_mask, "High"].max()
-        previous_day_low  = df.loc[prev_day_mask, "Low"].min()
-    else:
+    if len(unique_days) == 0:
         previous_day_high = None
         previous_day_low  = None
+    else:
+        last_data_day = unique_days[-1].date()
+        today = pd.Timestamp.now().normalize().date()
+
+        # Market is considered closed if the latest data is from a previous calendar day
+        market_closed = last_data_day < today
+
+        if market_closed or len(unique_days) == 1:
+            # Use the most recent day in the data as "previous day"
+            prev_day = unique_days[-1]
+        else:
+            # Market is open → use the day before the most recent day
+            prev_day = unique_days[-2]
+
+        prev_day_mask = df.index.normalize() == prev_day
+        previous_day_high = df.loc[prev_day_mask, "High"].max()
+        previous_day_low  = df.loc[prev_day_mask, "Low"].min()
 
     # Swing levels with your required constraints
     swing_high, swing_low = find_swing_levels(df, previous_day_high, previous_day_low)
