@@ -2,51 +2,87 @@
 
 INPUT_FILE_A="../data/tickers_current_positions.csv"
 INPUT_FILE_B="../data/tickers_sp_500.csv"
-INPUT_FILE_C="../data/tickers_other.csv"
+INPUT_FILE_C="../data/tickers_russel_2k.csv"
+INPUT_FILE_D="../data/tickers_other.csv"
+INPUT_FILE_E="../data/tickers_recent_top_scores.csv"
 OUTPUT_FILE="../data/tickers_combined.csv"
 
-# Make sure the output folder exists
+# Arguments: include_sp500  include_russell  include_other  include_top_scores
+INCLUDE_SP500="${1:-n}"
+INCLUDE_RUSSELL="${2:-n}"
+INCLUDE_OTHER="${3:-n}"
+INCLUDE_TOP_SCORES="${4:-n}"
+
 mkdir -p "$(dirname "$OUTPUT_FILE")"
 
-# Combine files (skip first line of each), sort, remove duplicates, and add header
 echo "Ticker,Owned" > "$OUTPUT_FILE"
 
-# Current positions
-tail -n +2 "$INPUT_FILE_A" |
+# ---- Current positions (always included) ----
+tail -n +2 "$INPUT_FILE_A" 2>/dev/null |
 sed 's/\./-/g' |
-awk -F',' '{print $1 ",Y"}' > /tmp/current_tickers.txt
+awk -F',' '{print $1 ",Y"}' > /tmp/current_tickers.txt || true
 
-# S&P 500
-tail -n +2 "$INPUT_FILE_B" |
-sed 's/\./-/g' |
-awk -F',' '{print $1 ","}' > /tmp/sp500_tickers.txt
+# ---- S&P 500 (optional) ----
+if [[ "$INCLUDE_SP500" == "y" && -f "$INPUT_FILE_B" ]]; then
+    tail -n +2 "$INPUT_FILE_B" |
+    sed 's/\./-/g' |
+    awk -F',' '{print $1 ","}' > /tmp/sp500_tickers.txt
+else
+    > /tmp/sp500_tickers.txt
+fi
 
-# Other
-tail -n +2 "$INPUT_FILE_C" |
-sed 's/\./-/g' |
-awk -F',' '{print $1 ","}' > /tmp/other_tickers.txt
+# ---- Russell 2000 (optional) ----
+if [[ "$INCLUDE_RUSSELL" == "y" && -f "$INPUT_FILE_C" ]]; then
+    tail -n +2 "$INPUT_FILE_C" |
+    sed 's/\./-/g' |
+    awk -F',' '{print $1 ","}' > /tmp/russell_tickers.txt
+else
+    > /tmp/russell_tickers.txt
+fi
 
+# ---- Other (optional) ----
+if [[ "$INCLUDE_OTHER" == "y" && -f "$INPUT_FILE_D" ]]; then
+    tail -n +2 "$INPUT_FILE_D" |
+    sed 's/\./-/g' |
+    awk -F',' '{print $1 ","}' > /tmp/other_tickers.txt
+else
+    > /tmp/other_tickers.txt
+fi
+
+# ---- Recent top-score tickers (optional) ----
+if [[ "$INCLUDE_TOP_SCORES" == "y" && -f "$INPUT_FILE_E" ]]; then
+    tail -n +2 "$INPUT_FILE_E" |
+    sed 's/\./-/g' |
+    awk -F',' '{print $1 ","}' > /tmp/top_scores_tickers.txt
+else
+    > /tmp/top_scores_tickers.txt
+fi
+
+# ---- Merge, deduplicate, prefer Owned=Y ----
 cat \
     /tmp/current_tickers.txt \
     /tmp/sp500_tickers.txt \
-    /tmp/other_tickers.txt |
+    /tmp/russell_tickers.txt \
+    /tmp/other_tickers.txt \
+    /tmp/top_scores_tickers.txt |
 sort -t',' -k1,1 |
 awk -F',' '
 {
     if (!seen[$1]) {
-        owned[$1]=$2
-        seen[$1]=1
-    }
-    else if ($2=="Y") {
-        owned[$1]="Y"
+        owned[$1] = $2
+        seen[$1]  = 1
+    } else if ($2 == "Y") {
+        owned[$1] = "Y"
     }
 }
-END{
+END {
     for (t in owned)
         print t "," owned[t]
 }' |
 sort >> "$OUTPUT_FILE"
 
-rm -f /tmp/current_tickers.txt
-rm -f /tmp/sp500_tickers.txt
-rm -f /tmp/other_tickers.txt
+rm -f /tmp/current_tickers.txt \
+      /tmp/sp500_tickers.txt \
+      /tmp/russell_tickers.txt \
+      /tmp/other_tickers.txt \
+      /tmp/top_scores_tickers.txt

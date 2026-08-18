@@ -22,9 +22,8 @@ SECTOR_MAP = {
     "Healthcare": 7,
     "Industrials": 8,
     "Real Estate": 9,
-    "Sector": 10,  # placeholder if encountered
-    "Technology": 11,
-    "Utilities": 12
+    "Technology": 10,
+    "Utilities": 11
 }
 
 # Reverse mapping for writing reports later

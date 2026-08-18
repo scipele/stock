@@ -19,9 +19,8 @@ static int sectorNameToCode(const std::string& name) {
     if (name == "Healthcare")             return 7;
     if (name == "Industrials")            return 8;
     if (name == "Real Estate")            return 9;
-    if (name == "Sector")                 return 10;
-    if (name == "Technology")             return 11;
-    if (name == "Utilities")              return 12;
+    if (name == "Technology")             return 10;
+    if (name == "Utilities")              return 11;
     return 0;   // unknown
 }
 
@@ -39,9 +38,8 @@ const SectorParams SECTOR_PARAMS[13] = {
     /* 7 */ {0.06, 0.085, 0.020, 14.0},   // Healthcare
     /* 8 */ {0.06, 0.085, 0.020, 14.0},   // Industrials
     /* 9 */ {0.04, 0.085, 0.015, 12.0},   // Real Estate
-    /*10 */ {0.06, 0.085, 0.020, 15.0},   // "Sector" placeholder
-    /*11 */ {0.10, 0.095, 0.025, 16.0},   // Technology
-    /*12 */ {0.03, 0.080, 0.015, 12.0}    // Utilities
+    /*10 */ {0.10, 0.095, 0.025, 16.0},   // Technology
+    /*11 */ {0.03, 0.080, 0.015, 12.0}    // Utilities
 };
 
 
