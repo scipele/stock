@@ -81,6 +81,15 @@ static double toDouble(const std::string& s) {
     }
 }
 
+static int toInt(const std::string& s, int defaultValue = 0) {
+    try {
+        if (s.empty()) return defaultValue;
+        return std::stoi(s);
+    } catch (...) {
+        return defaultValue;
+    }
+}
+
 
 // ------------------------------------------------------------------------
 // Load the Python-generated CSV
@@ -101,25 +110,33 @@ std::vector<StockData> loadFundamentals(const std::string& path) {
         auto cols = splitCSV(line);
         if (cols.size() < 24) continue;
 
+        const bool hasExchIndex = cols.size() >= 26;
+        const int offset = hasExchIndex ? 2 : 0;
+
         StockData s;
         s.ticker        = cols[0];
         s.company       = cols[1];
         s.sector        = sectorNameToCode(cols[2]);   // text → int
-        s.price         = toDouble(cols[3]);
-        s.shares        = toDouble(cols[4]);
-        s.marketCap     = toDouble(cols[5]);
-        s.totalDebt     = toDouble(cols[6]);
-        s.totalCash     = toDouble(cols[7]);
-        s.beta          = toDouble(cols[8]);
-        s.forwardPE     = toDouble(cols[9]);
-        s.trailingPE    = toDouble(cols[10]);
-        s.fcfTTM        = toDouble(cols[11]);
+        if (hasExchIndex) {
+            s.exch      = toInt(cols[3], 4);
+            s.index     = toInt(cols[4], 0);
+        }
 
-        for (int i = 0; i < 5; ++i) s.fcf[i] = toDouble(cols[12 + i]);
-        for (int i = 0; i < 5; ++i) s.rev[i] = toDouble(cols[17 + i]);
+        s.price         = toDouble(cols[3 + offset]);
+        s.shares        = toDouble(cols[4 + offset]);
+        s.marketCap     = toDouble(cols[5 + offset]);
+        s.totalDebt     = toDouble(cols[6 + offset]);
+        s.totalCash     = toDouble(cols[7 + offset]);
+        s.beta          = toDouble(cols[8 + offset]);
+        s.forwardPE     = toDouble(cols[9 + offset]);
+        s.trailingPE    = toDouble(cols[10 + offset]);
+        s.fcfTTM        = toDouble(cols[11 + offset]);
 
-        s.dataQuality   = cols[22];
-        s.fetchedAt     = cols[23];
+        for (int i = 0; i < 5; ++i) s.fcf[i] = toDouble(cols[12 + offset + i]);
+        for (int i = 0; i < 5; ++i) s.rev[i] = toDouble(cols[17 + offset + i]);
+
+        s.dataQuality   = cols[22 + offset];
+        s.fetchedAt     = cols[23 + offset];
 
         stocks.push_back(s);
     }
@@ -325,7 +342,7 @@ void writeSummary(const std::vector<StockData>& stocks, const std::string& path)
         return;
     }
 
-    out << "Rank,Ticker,Company,Sector,Price,IntrinsicValue,MarginOfSafety_pct,Upside_pct,"
+    out << "Rank,Ticker,Company,Sector,Exch,Index,Price,IntrinsicValue,MarginOfSafety_pct,Upside_pct,"
         << "GrowthRate,WACC,FCF_TTM,NetDebt,Shares,MarketCap,"
         << "ForwardPE,TrailingPE,DataQuality\n";
 
@@ -343,6 +360,8 @@ void writeSummary(const std::vector<StockData>& stocks, const std::string& path)
             << s.ticker << ","
             << "\"" << s.company << "\","
             << s.sector << ","
+            << s.exch << ","
+            << s.index << ","
             << std::fixed << std::setprecision(2) << s.price << ","
             << std::setprecision(2) << s.intrinsicValue << ","
             << std::setprecision(1) << s.marginOfSafety << ","

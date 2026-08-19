@@ -4,6 +4,23 @@
 #include <algorithm>
 #include <string>
 
+namespace {
+int parse_int_or_default(const std::string& value, int default_value)
+{
+    if(value.empty())
+        return default_value;
+
+    try
+    {
+        return std::stoi(value);
+    }
+    catch(...)
+    {
+        return default_value;
+    }
+}
+}
+
 std::string get_csv_field(std::stringstream& ss) {
     std::string field;
     if(ss.peek() == '"') {
@@ -42,18 +59,15 @@ std::unordered_map<std::string,Metadata> load_metadata(const std::string& file) 
         std::string ticker = get_csv_field(ss);
         std::string company = get_csv_field(ss);
         std::string sector_str = get_csv_field(ss);
+        std::string exch_str = get_csv_field(ss);
+        std::string index_str = get_csv_field(ss);
         
         if(!ticker.empty()) {
-            int sector_code = 0;
-            try {
-                if(!sector_str.empty()) {
-                    sector_code = std::stoi(sector_str);
-                }
-            } catch (...) {
-                sector_code = 0; // Fallback for invalid or missing values
-            }
+            int sector_code = parse_int_or_default(sector_str, 0);
+            int exch_code = parse_int_or_default(exch_str, 4);
+            int index_code = parse_int_or_default(index_str, 0);
             
-            data[ticker] = {company, sector_code};
+            data[ticker] = {company, sector_code, exch_code, index_code};
         }
     }
     return data;

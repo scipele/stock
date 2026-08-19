@@ -177,6 +177,8 @@ void process_stock(const std::string& ticker) {
     if(it!=metadata.end()){
         result.company=it->second.company;
         result.sector=it->second.sector;
+        result.exch=it->second.exch;
+        result.index=it->second.index;
     }
 
     result.score = score;

@@ -35,12 +35,66 @@ SECTOR_NAME_MAP = {
     11: "Utilities"
 }
 
+EXCH_CODE_MAP = {
+    0: "N", # NYSE
+    1: "Q", # Nasdaq
+    2: "A", # NYSE American/AMEX
+    3: "C", # Cboe
+    4: "O", # Other
+}
+
+INDEX_BIT_MAP = {
+    1: "SP",  #S&P 500
+    2: "NQ", # Nasdaq-100
+    4: "DJ", # Dow Jones Industrial Average
+    8: "R2", # Russell 2000
+    16: "M4", # S&P MidCap 400
+    32: "S6", # S&P SmallCap 600
+    64: "TM", # CRSP U.S. Total Market
+}
+
 
 def prop(name,value):
     p = PropertyValue()
     p.Name = name
     p.Value = value
     return p
+
+
+def find_column_index(sheet, end_col, header_name):
+    for col in range(end_col + 1):
+        header_cell = sheet.getCellByPosition(col, 0)
+        if header_cell.getString() == header_name:
+            return col
+    return None
+
+
+def get_cell_int_value(cell):
+    raw_str = cell.getString().strip()
+    if raw_str:
+        try:
+            return int(raw_str)
+        except ValueError:
+            return None
+
+    try:
+        return int(cell.getValue())
+    except Exception:
+        return None
+
+
+def format_index_labels(bitmask):
+    if bitmask is None:
+        return ""
+
+    labels = []
+    for bit in sorted(INDEX_BIT_MAP.keys()):
+        if bitmask & bit:
+            labels.append(INDEX_BIT_MAP[bit])
+
+    if labels:
+        return " | ".join(labels)
+    return ""
 
 
 def main():
@@ -105,28 +159,36 @@ def main():
     end_col = cursor.RangeAddress.EndColumn
 
 
-    # --- Find and Translate the Sector Column ---
-    # Find which column contains the "Sector" header
-    sector_col_idx = None
-    for col in range(end_col + 1):
-        header_cell = sheet.getCellByPosition(col, 0)
-        if header_cell.getString() == "Sector":
-            sector_col_idx = col
-            break
+    # --- Find and Translate metadata columns ---
+    sector_col_idx = find_column_index(sheet, end_col, "Sector")
+    exch_col_idx = find_column_index(sheet, end_col, "Exch")
+    index_col_idx = find_column_index(sheet, end_col, "Index")
 
-    # If the Sector column exists, update numeric values to text names
+    # Sector: numeric to text label
     if sector_col_idx is not None:
-        for row in range(1, end_row + 1):  # Start at 1 to skip the header
+        for row in range(1, end_row + 1):
             cell = sheet.getCellByPosition(sector_col_idx, row)
-            # Read cell value (Calc treats numbers as floats)
-            cell_val = cell.getValue()
-            
-            # Map valid integer codes back to strings
+            cell_val = get_cell_int_value(cell)
             if cell_val in SECTOR_NAME_MAP:
                 cell.setString(SECTOR_NAME_MAP[cell_val])
-            elif int(cell_val) in SECTOR_NAME_MAP:
-                cell.setString(SECTOR_NAME_MAP[int(cell_val)])
-    # --------------------------------------------
+
+    # Exch: numeric to letter+exchange
+    if exch_col_idx is not None:
+        for row in range(1, end_row + 1):
+            cell = sheet.getCellByPosition(exch_col_idx, row)
+            cell_val = get_cell_int_value(cell)
+            if cell_val in EXCH_CODE_MAP:
+                cell.setString(EXCH_CODE_MAP[cell_val])
+
+    # Index: bitmask to joined letter+index labels
+    if index_col_idx is not None:
+        for row in range(1, end_row + 1):
+            cell = sheet.getCellByPosition(index_col_idx, row)
+            cell_val = get_cell_int_value(cell)
+            label = format_index_labels(cell_val)
+            if label:
+                cell.setString(label)
+    # ----------------------------------
 
 
     # Freeze first row

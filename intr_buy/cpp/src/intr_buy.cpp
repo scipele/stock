@@ -25,8 +25,8 @@ struct Config
     string intrinsicFile;
     string outputFile;
 
-    double buyWeight = 0.65;
-    double intrinsicWeight = 0.35;
+    double buyWeight = 0.85;
+    double intrinsicWeight = 0.15;
 
     double consensusMax = 10.0;
     double consensusPenalty = 0.50;
@@ -43,6 +43,8 @@ struct Stock
     string company;
 
     int sector = 0;
+    int exch = 4;
+    int index = 0;
 
     bool owned = false;
 
@@ -122,6 +124,29 @@ vector<string> splitCSV(const string& line)
     result.push_back(field);
 
     return result;
+}
+
+void normalizeWeights(Config& config)
+{
+    if(config.buyWeight < 0.0)
+        config.buyWeight = 0.0;
+
+    if(config.intrinsicWeight < 0.0)
+        config.intrinsicWeight = 0.0;
+
+    const double totalWeight =
+        config.buyWeight +
+        config.intrinsicWeight;
+
+    if(totalWeight <= 0.0)
+    {
+        config.buyWeight = 0.85;
+        config.intrinsicWeight = 0.15;
+        return;
+    }
+
+    config.buyWeight /= totalWeight;
+    config.intrinsicWeight /= totalWeight;
 }
 
 
@@ -330,6 +355,9 @@ unordered_map<string, Stock> loadBuyOpportunity(
         if(cols.size() < 22)
             continue;
 
+        const bool hasExchIndex = cols.size() >= 24;
+        const int offset = hasExchIndex ? 2 : 0;
+
 
         Stock s;
 
@@ -339,44 +367,50 @@ unordered_map<string, Stock> loadBuyOpportunity(
 
         s.sector = toInt(cols[4]);
 
+        if(hasExchIndex)
+        {
+            s.exch = toInt(cols[5]);
+            s.index = toInt(cols[6]);
+        }
+
 
         // Owned column
         if(!cols[1].empty())
             s.owned = true;
 
 
-        s.buyScore = toDouble(cols[5]);
+        s.buyScore = toDouble(cols[5 + offset]);
 
-        s.price = toDouble(cols[6]);
-
-
-        s.rsi = toDouble(cols[11]);
-
-        s.forwardPE = toDouble(cols[12]);
-        s.trailingPE = toDouble(cols[13]);
+        s.price = toDouble(cols[6 + offset]);
 
 
-        s.momentum = toDouble(cols[14]);
-        s.volatility = toDouble(cols[15]);
+        s.rsi = toDouble(cols[11 + offset]);
+
+        s.forwardPE = toDouble(cols[12 + offset]);
+        s.trailingPE = toDouble(cols[13 + offset]);
+
+
+        s.momentum = toDouble(cols[14 + offset]);
+        s.volatility = toDouble(cols[15 + offset]);
 
 
         s.swingScore =
-            toDouble(cols[16]);
+            toDouble(cols[16 + offset]);
 
         s.supportScore =
-            toDouble(cols[17]);
+            toDouble(cols[17 + offset]);
 
         s.peScore =
-            toDouble(cols[18]);
+            toDouble(cols[18 + offset]);
 
         s.rsiScore =
-            toDouble(cols[19]);
+            toDouble(cols[19 + offset]);
 
         s.momentumScore =
-            toDouble(cols[20]);
+            toDouble(cols[20 + offset]);
 
         s.volatilityScore =
-            toDouble(cols[21]);
+            toDouble(cols[21 + offset]);
 
 
         stocks[s.ticker] = s;
@@ -452,6 +486,9 @@ void loadIntrinsicValue(
         if(cols.size() < 17)
             continue;
 
+        const bool hasExchIndex = cols.size() >= 19;
+        const int offset = hasExchIndex ? 2 : 0;
+
 
         string ticker = cols[1];
 
@@ -469,41 +506,47 @@ void loadIntrinsicValue(
 
         s.sector = toInt(cols[3]);
 
+        if(hasExchIndex)
+        {
+            s.exch = toInt(cols[4]);
+            s.index = toInt(cols[5]);
+        }
+
 
         s.price =
-            toDouble(cols[4]);
+            toDouble(cols[4 + offset]);
 
 
         s.intrinsicValue =
-            toDouble(cols[5]);
+            toDouble(cols[5 + offset]);
 
 
         s.marginSafety =
-            toDouble(cols[6]);
+            toDouble(cols[6 + offset]);
 
 
         s.upside =
-            toDouble(cols[7]);
+            toDouble(cols[7 + offset]);
 
 
         s.growthRate =
-            toDouble(cols[8]);
+            toDouble(cols[8 + offset]);
 
 
         s.wacc =
-            toDouble(cols[9]);
+            toDouble(cols[9 + offset]);
 
 
         s.forwardPE =
-            toDouble(cols[14]);
+            toDouble(cols[14 + offset]);
 
 
         s.trailingPE =
-            toDouble(cols[15]);
+            toDouble(cols[15 + offset]);
 
 
         s.dataQuality =
-            cols[16];
+            cols[16 + offset];
     }
 }
 
@@ -732,6 +775,8 @@ void writeReport(
     << "Ticker,"
     << "Company,"
     << "Sector,"
+    << "Exch,"
+    << "Index,"
     << "Owned,"
     << "CombinedScore,"
     << "BuyScore,"
@@ -774,6 +819,8 @@ void writeReport(
         << s.ticker << ","
         << "\"" << s.company << "\","
         << s.sector << ","
+        << s.exch << ","
+        << s.index << ","
         << (s.owned ? "CP" : "") << ","
 
         << s.combinedScore << ","
@@ -854,6 +901,8 @@ int main()
     loadWeights(
         "../data/overall_weights.csv",
         config);
+
+    normalizeWeights(config);
 
 
 

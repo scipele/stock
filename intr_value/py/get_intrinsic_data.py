@@ -16,10 +16,27 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # ------------------------------------------------------------------
 INPUT_FILE  = "../data/tickers_combined.csv"
 OUTPUT_FILE = "../data/fundamentals_intrinsic.csv"
+BUY_OPP_INDEX_DIR = "../../buy_opp/data"
 
 MAX_HISTORY_YEARS = 5
 MAX_WORKERS = 8          # adjust 6–12 depending on your connection
 # ------------------------------------------------------------------
+
+INDEX_BIT_MAP = {
+    "SP": 1,
+    "NQ": 2,
+    "DJ": 4,
+    "R2": 8,
+    "M4": 16,
+    "S6": 32,
+    "TM": 64,
+}
+
+INDEX_SOURCE_FILES = {
+    "SP": os.path.join(BUY_OPP_INDEX_DIR, "tickers_sp_500.csv"),
+    "R2": os.path.join(BUY_OPP_INDEX_DIR, "tickers_russel_2k.csv"),
+    "DJ": os.path.join(BUY_OPP_INDEX_DIR, "tickers_dow.csv"),
+}
 
 
 def safe_float(value, default=0.0):
@@ -34,6 +51,59 @@ def safe_float(value, default=0.0):
         return default
 
 
+def normalize_ticker(ticker):
+    return ticker.strip().replace("/", "-").upper()
+
+
+def load_index_membership():
+    membership = {}
+
+    for short_code, path in INDEX_SOURCE_FILES.items():
+        bit = INDEX_BIT_MAP[short_code]
+        if not os.path.exists(path):
+            continue
+
+        with open(path, "r", newline="") as f:
+            reader = csv.DictReader(f)
+            fieldnames = reader.fieldnames or []
+            ticker_col = None
+            for candidate in fieldnames:
+                if candidate and candidate.strip().lower() == "ticker":
+                    ticker_col = candidate
+                    break
+
+            for row in reader:
+                if ticker_col:
+                    raw_ticker = row.get(ticker_col, "")
+                elif fieldnames:
+                    raw_ticker = row.get(fieldnames[0], "")
+                else:
+                    raw_ticker = ""
+
+                ticker = normalize_ticker(raw_ticker)
+                if ticker:
+                    membership[ticker] = membership.get(ticker, 0) | bit
+
+    return membership
+
+
+def exchange_to_code(exchange_str, full_exchange_name=""):
+    raw = f"{exchange_str} {full_exchange_name}".strip().lower()
+    if not raw:
+        return 4
+
+    if any(token in raw for token in ("nasdaq", "nms", "ngm", "ncm", "nas")):
+        return 1
+    if any(token in raw for token in ("nyse american", "amex", "ase", "xase")):
+        return 2
+    if any(token in raw for token in ("cboe", "bats", "edgx")):
+        return 3
+    if any(token in raw for token in ("nyse", "nyq", "xnys")):
+        return 0
+
+    return 4
+
+
 def load_tickers(path):
     tickers = []
     with open(path, "r", newline="") as f:
@@ -42,7 +112,7 @@ def load_tickers(path):
         for row in reader:
             if not row:
                 continue
-            t = row[0].strip()
+            t = normalize_ticker(row[0])
             if t and t.lower() != "ticker":
                 tickers.append(t)
     return tickers
@@ -70,11 +140,13 @@ def extract_history(df, item_name, max_years=MAX_HISTORY_YEARS):
     return values
 
 
-def get_data(ticker):
+def get_data(ticker, index_membership):
     result = {
         "Ticker": ticker,
         "Company": "",
         "Sector": "",
+        "Exch": 4,
+        "Index": index_membership.get(ticker, 0),
         "Price": 0.0,
         "SharesOutstanding": 0.0,
         "MarketCap": 0.0,
@@ -96,6 +168,7 @@ def get_data(ticker):
 
         result["Company"]           = info.get("longName") or info.get("shortName") or ""
         result["Sector"]            = info.get("sector") or ""
+        result["Exch"]              = exchange_to_code(info.get("exchange", ""), info.get("fullExchangeName", ""))
         result["Price"]             = safe_float(info.get("currentPrice") or info.get("regularMarketPrice"))
         result["SharesOutstanding"] = safe_float(info.get("sharesOutstanding"))
         result["MarketCap"]         = safe_float(info.get("marketCap"))
@@ -141,14 +214,16 @@ def get_data(ticker):
 def main():
     print("      === Intrinsic Value – Data Gatherer (concurrent) ===")
     tickers = load_tickers(INPUT_FILE)
+    index_membership = load_index_membership()
     print(f"      Loaded {len(tickers)} tickers")
+    print(f"      Loaded index map entries: {len(index_membership)}")
     print(f"      Using {MAX_WORKERS} parallel workers\n")
 
     rows = []
     completed = 0
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        future_to_ticker = {executor.submit(get_data, t): t for t in tickers}
+        future_to_ticker = {executor.submit(get_data, t, index_membership): t for t in tickers}
 
         for future in as_completed(future_to_ticker):
             ticker = future_to_ticker[future]
@@ -173,7 +248,7 @@ def main():
     rows.sort(key=lambda r: ticker_order.get(r["Ticker"], 9999))
 
     fieldnames = [
-        "Ticker", "Company", "Sector",
+        "Ticker", "Company", "Sector", "Exch", "Index",
         "Price", "SharesOutstanding", "MarketCap",
         "TotalDebt", "TotalCash", "Beta",
         "ForwardPE", "TrailingPE",

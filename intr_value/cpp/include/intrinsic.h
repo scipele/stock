@@ -20,6 +20,8 @@ struct StockData {
     std::string ticker;
     std::string company;
     int sector = 0;
+    int exch = 4;
+    int index = 0;
     double price = 0.0;
     double shares = 0.0;
     double marketCap = 0.0;

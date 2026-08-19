@@ -12,6 +12,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 CSV_FILE = os.path.join(BASE_DIR, "../output/combined_report.csv")
 ODS_FILE = os.path.join(BASE_DIR, "../output/combined_report.ods")
+UNO_PIPE_NAME = "intr_buy_report_pipe"
 
 
 SECTOR_NAME_MAP = {
@@ -28,12 +29,63 @@ SECTOR_NAME_MAP = {
     11: "Utilities"
 }
 
+EXCH_CODE_MAP = {
+    0: "N",  # NYSE
+    1: "Q",  # Nasdaq
+    2: "A",  # NYSE American/AMEX
+    3: "C",  # Cboe
+    4: "O",  # Other
+}
+
+INDEX_BIT_MAP = {
+    1: "SP",  # S&P 500
+    2: "NQ",  # Nasdaq-100
+    4: "DJ",  # Dow Jones Industrial Average
+    8: "R2",  # Russell 2000
+    16: "M4",  # S&P MidCap 400
+    32: "S6",  # S&P SmallCap 600
+    64: "TM",  # CRSP U.S. Total Market
+}
+
 
 def prop(name, value):
     p = PropertyValue()
     p.Name = name
     p.Value = value
     return p
+
+
+def find_column_index(sheet, end_col, header_name):
+    for col in range(end_col + 1):
+        header = sheet.getCellByPosition(col, 0).getString().strip()
+        if header == header_name:
+            return col
+    return None
+
+
+def get_cell_int_value(cell):
+    raw_str = cell.getString().strip()
+    if raw_str:
+        try:
+            return int(raw_str)
+        except ValueError:
+            return None
+
+    try:
+        return int(cell.getValue())
+    except Exception:
+        return None
+
+
+def format_index_labels(bitmask):
+    if bitmask is None:
+        return ""
+
+    labels = []
+    for bit in sorted(INDEX_BIT_MAP.keys()):
+        if bitmask & bit:
+            labels.append(INDEX_BIT_MAP[bit])
+    return " | ".join(labels)
 
 
 
@@ -46,7 +98,7 @@ def main():
         [
             "libreoffice",
             "--headless",
-            "--accept=socket,host=localhost,port=2002;urp;",
+            f"--accept=pipe,name={UNO_PIPE_NAME};urp;",
             "--norestore",
             "--nofirststartwizard"
         ],
@@ -65,9 +117,21 @@ def main():
     )
 
 
-    ctx = resolver.resolve(
-        "uno:socket,host=localhost,port=2002;urp;StarOffice.ComponentContext"
-    )
+    ctx = None
+
+    for _ in range(15):
+        try:
+            ctx = resolver.resolve(
+                f"uno:pipe,name={UNO_PIPE_NAME};urp;StarOffice.ComponentContext"
+            )
+            break
+        except Exception:
+            time.sleep(1)
+
+    if ctx is None:
+        raise RuntimeError(
+            "Unable to connect to LibreOffice listener on port 2002"
+        )
 
 
     smgr = ctx.ServiceManager
@@ -105,20 +169,9 @@ def main():
     # Convert Sector integer to text
     # -------------------------------------------------
 
-    sector_col = None
-
-    for col in range(end_col + 1):
-
-        header = (
-            sheet
-            .getCellByPosition(col,0)
-            .getString()
-            .strip()
-        )
-
-        if header == "Sector":
-            sector_col = col
-            break
+    sector_col = find_column_index(sheet, end_col, "Sector")
+    exch_col = find_column_index(sheet, end_col, "Exch")
+    index_col = find_column_index(sheet, end_col, "Index")
 
 
     if sector_col is not None:
@@ -130,24 +183,40 @@ def main():
                 row
             )
 
-            try:
+            code = get_cell_int_value(cell)
 
-                code = int(
-                    float(
-                        cell.getString()
-                        or cell.getValue()
-                    )
-                )
+            if code in SECTOR_NAME_MAP:
+                cell.setString(SECTOR_NAME_MAP[code])
 
-                cell.setString(
-                    SECTOR_NAME_MAP.get(
-                        code,
-                        "Unknown"
-                    )
-                )
 
-            except:
-                pass
+    if exch_col is not None:
+
+        for row in range(1, end_row + 1):
+
+            cell = sheet.getCellByPosition(
+                exch_col,
+                row
+            )
+
+            code = get_cell_int_value(cell)
+            if code in EXCH_CODE_MAP:
+                cell.setString(EXCH_CODE_MAP[code])
+
+
+    if index_col is not None:
+
+        for row in range(1, end_row + 1):
+
+            cell = sheet.getCellByPosition(
+                index_col,
+                row
+            )
+
+            code = get_cell_int_value(cell)
+            label = format_index_labels(code)
+
+            if label:
+                cell.setString(label)
 
 
     # -------------------------------------------------

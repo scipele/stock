@@ -4,8 +4,12 @@
 set -e
 CUR_POS_TICKERS_FILE="../data/tickers_current_positions.csv"
 
-# Determine the directory of the script and change to that directory
-SCRIPT_DIR_A="/home/dev/stock/buy_opp/script"
+# Resolve script and project root paths dynamically
+SCRIPT_DIR_C="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+ROOT_DIR="$( cd "$SCRIPT_DIR_C/../.." && pwd )"
+SCRIPT_DIR_A="$ROOT_DIR/buy_opp/script"
+SCRIPT_DIR_B="$ROOT_DIR/intr_value/script"
+
 cd "$SCRIPT_DIR_A"
 
 # ==========================================
@@ -132,7 +136,6 @@ echo
 # ==========================================
 # PROGRAM #2 – Intrinsic Value
 # ==========================================
-SCRIPT_DIR_B="/home/dev/stock/intr_value/script"
 cd "$SCRIPT_DIR_B"
 
 echo
@@ -202,15 +205,14 @@ echo " Program #3 - Data Combination & Report Script"
 echo "==============================================="
 echo
 
-SCRIPT_DIR_C="/home/dev/stock/intr_buy/script"
 cd "$SCRIPT_DIR_C"
 
 echo "   Running from: $(pwd)"
 echo
 
 # Define paths explicitly based on script location
-BUY_FILE="$SCRIPT_DIR_C/../../buy_opp/output/summary_all.csv"
-INTR_FILE="$SCRIPT_DIR_C/../../intr_value/output/summary_intrinsic.csv"
+BUY_FILE="$ROOT_DIR/buy_opp/output/summary_all.csv"
+INTR_FILE="$ROOT_DIR/intr_value/output/summary_intrinsic.csv"
 CPP_PROGRAM="$SCRIPT_DIR_C/../cpp/bin/intr_buy"
 
 # ==========================================
@@ -290,24 +292,30 @@ echo
 # ==========================================
 # 4. OPEN LIBREOFFICE
 # ==========================================
-echo "4.  Opening report in LibreOffice..."
-if setsid libreoffice "$SCRIPT_DIR_C/../output/combined_report.ods" > /tmp/libreoffice_combined_debug.log 2>&1 & then
-    echo "     ✅ LibreOffice background instance initiated."
-    sleep 1
-    if pgrep -f "combined_report.ods" > /dev/null || pgrep -f "libreoffice" > /dev/null; then
-        echo "     Process target localized in operational thread group."
+if [[ "$CREATE_REPORT" == "y" ]]; then
+    REPORT_FILE="$SCRIPT_DIR_C/../output/combined_report.ods"
+    echo "4.  Opening report in LibreOffice..."
+
+    if [[ ! -f "$REPORT_FILE" ]]; then
+        echo "     ⚠️  Report file not found at: $REPORT_FILE"
+        echo "     Skipping auto-open step."
+        exit 0
+    fi
+
+    if setsid libreoffice "$REPORT_FILE" > /tmp/libreoffice_combined_debug.log 2>&1 & then
+        echo "     ✅ LibreOffice background instance initiated."
+        sleep 1
+        if pgrep -f "combined_report.ods" > /dev/null || pgrep -f "libreoffice" > /dev/null; then
+            echo "     Process target localized in operational thread group."
+        else
+            echo "     ⚠️  WARNING: Launch execution fired but process tree shows missing thread state."
+            echo "     Diagnostic stream reads:"
+            cat /tmp/libreoffice_combined_debug.log
+        fi
     else
-        echo "     ⚠️  WARNING: Launch execution fired but process tree shows missing thread state."
-        echo "     Diagnostic stream reads:"
-        cat /tmp/libreoffice_combined_debug.log
+        echo "     ❌ ERROR: Shell context refused program allocation execution!"
+        exit 1
     fi
 else
-    echo "     ❌ ERROR: Shell context refused program allocation execution!"
-    read -p "Press Enter to close window..."
-    exit 1
+    echo "4.  Skipping LibreOffice open (report creation was skipped)."
 fi
-
-echo
-echo "=== DEBUG PAUSE ==="
-echo "The script run has successfully finished processing data sets."
-read -p "Press Enter to terminate this window shell and ensure visual report remains painted..."
