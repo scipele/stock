@@ -190,30 +190,43 @@ def build_svg(frame: pd.DataFrame) -> tuple[str, dict[int, float], dict[int, flo
     band_totals = {index: float(frame[frame["BandIndex"] == index]["MarketValue"].sum()) for index in TARGET_INDEXES}
     sector_totals = {item["sector_id"]: item["total"] for item in sectors}
 
-    width = 1200
-    height = 1200
+    width = 1800
+    height = 1400
     cx = width / 2
     cy = height / 2
-    label_margin = 112.0
+    label_margin = 180.0
     sector_angle = 2 * math.pi / len(ALL_SECTOR_IDS)
 
-    ring_inner_radius = 92.0
-    ring_thickness = 90.0
-    ring_gap = 18.0
+    center_hole_radius = 92.0
+    max_ring_radius = 430.0
+    ring_gap = 26.0
+    chart_area = math.pi * (max_ring_radius ** 2 - center_hole_radius ** 2)
+
     ring_geometries = []
-    current_inner_radius = ring_inner_radius
+    cumulative_share = 0.0
+    previous_outer = center_hole_radius
     for index, label, color in BAND_ORDER:
-        ring_outer_radius = current_inner_radius + ring_thickness
+        band_total = float(band_totals.get(index, 0.0))
+        band_share = band_total / total_value if total_value > 0 else 0.0
+        computed_inner = math.sqrt(center_hole_radius ** 2 + cumulative_share * (max_ring_radius ** 2 - center_hole_radius ** 2))
+        cumulative_share += band_share
+        computed_outer = math.sqrt(center_hole_radius ** 2 + cumulative_share * (max_ring_radius ** 2 - center_hole_radius ** 2))
+
+        ring_inner_radius = max(computed_inner, previous_outer + ring_gap)
+        ring_outer_radius = max(computed_outer, ring_inner_radius)
+
         ring_geometries.append(
             {
                 "index": index,
                 "label": label,
                 "color": color,
-                "inner": current_inner_radius,
+                "inner": ring_inner_radius,
                 "outer": ring_outer_radius,
+                "separator_inner": previous_outer,
+                "separator_outer": ring_inner_radius,
             }
         )
-        current_inner_radius = ring_outer_radius + ring_gap
+        previous_outer = ring_outer_radius
 
     outer_radius = ring_geometries[-1]["outer"]
 
@@ -221,27 +234,25 @@ def build_svg(frame: pd.DataFrame) -> tuple[str, dict[int, float], dict[int, flo
         '<?xml version="1.0" encoding="UTF-8"?>',
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
         "<defs>",
-        "  <linearGradient id=\"bg\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\">",
-        "    <stop offset=\"0%\" stop-color=\"#fafafa\" />",
-        "    <stop offset=\"100%\" stop-color=\"#eef2f6\" />",
-        "  </linearGradient>",
+        "  <mask id=\"outer-bg-mask\">",
+        f"    <rect x=\"0\" y=\"0\" width=\"{width}\" height=\"{height}\" fill=\"white\" />",
+        f"    <circle cx=\"{cx}\" cy=\"{cy}\" r=\"{outer_radius + 12.0:.2f}\" fill=\"black\" />",
+        "  </mask>",
         "</defs>",
-        f'<rect x="0" y="0" width="{width}" height="{height}" fill="url(#bg)"/>',
+        f'<rect x="0" y="0" width="{width}" height="{height}" fill="#121212" mask="url(#outer-bg-mask)"/>',
     ]
 
     for ring in ring_geometries:
         ring_center_radius = (ring["inner"] + ring["outer"]) / 2
+        ring_thickness = ring["outer"] - ring["inner"]
         svg_parts.append(
             f'<circle cx="{cx}" cy="{cy}" r="{ring_center_radius:.2f}" fill="none" stroke="#ffffff" '
-            f'stroke-width="{ring_thickness:.2f}" stroke-opacity="0.72"/>'
-        )
-        svg_parts.append(
-            f'<circle cx="{cx}" cy="{cy}" r="{ring["outer"]:.2f}" fill="none" stroke="#d6dce3" '
-            'stroke-width="1.2" stroke-dasharray="4 6"/>'
+            f'stroke-width="{ring_thickness:.2f}" stroke-opacity="0.0"/>'
         )
 
+    # This is the inner circle
     svg_parts.append(
-        f'<circle cx="{cx}" cy="{cy}" r="{ring_geometries[0]["inner"]:.2f}" fill="#ffffff" opacity="0.72"/>'
+        f'<circle cx="{cx}" cy="{cy}" r="{ring_geometries[0]["inner"]:.2f}" fill="#575353" opacity="0.9"/>' #try #798694, was #edf1f5
     )
 
     start_angle = -math.pi / 2
@@ -264,11 +275,25 @@ def build_svg(frame: pd.DataFrame) -> tuple[str, dict[int, float], dict[int, flo
         ring_outer = float(ring["outer"])
         ring_total = float(band_totals.get(index, 0.0))
 
+        separator_inner = float(ring.get("separator_inner", ring_inner))
+        separator_outer = float(ring.get("separator_outer", ring_outer))
+
+        if separator_outer > separator_inner:
+            svg_parts.append(
+                f'<path d="{ring_background_path(cx, cy, separator_inner, separator_outer)}" '
+                'fill="#8a8686" fill-opacity="1.0" stroke="#374151" stroke-width="2.0"/>'  # try
+            )
+
         svg_parts.append(
-            f'<path d="{ring_background_path(cx, cy, ring_inner, ring_outer)}" fill="#ffffff" fill-opacity="0.0" stroke="#e4e8ee" stroke-width="1.1"/>'
+            f'<path d="{ring_background_path(cx, cy, ring_inner, ring_outer)}" fill="#dfe7ef" fill-opacity="0.9" stroke="#d1d5db" stroke-width="1.2"/>'
         )
 
         for sector, sector_start, sector_end, _ in sector_geometry:
+            sector_slice = svg_arc_path(cx, cy, ring_inner, ring_outer, sector_start, sector_end)
+            svg_parts.append(
+                f'<path d="{sector_slice}" fill="#ffffff" fill-opacity="0.95" stroke="#4b5563" stroke-width="0.8"/>'
+            )
+
             value = float(sector["values"].get(index, 0.0))
             if value <= 0 or ring_total <= 0:
                 continue
@@ -277,12 +302,12 @@ def build_svg(frame: pd.DataFrame) -> tuple[str, dict[int, float], dict[int, flo
             fill_outer = math.sqrt(ring_inner ** 2 + (ring_outer ** 2 - ring_inner ** 2) * fill_fraction)
             path = svg_arc_path(cx, cy, ring_inner, fill_outer, sector_start, sector_end)
             svg_parts.append(
-                f'<path d="{path}" fill="{ring["color"]}" fill-opacity="0.55" stroke="#ffffff" stroke-width="1.2"/>'
+                f'<path d="{path}" fill="{ring["color"]}" fill-opacity="1.0" stroke="#4b5563" stroke-width="0.8"/>'
             )
 
     svg_parts.append(
         f'<text x="{cx}" y="44" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" '
-        'font-size="28" font-weight="700" fill="#111827">Owned market value</text>'
+        'font-size="28" font-weight="700" fill="#FF79C6">Owned market value</text>'
     )
 
     for sector, _, _, sector_mid in sector_geometry:
@@ -294,26 +319,26 @@ def build_svg(frame: pd.DataFrame) -> tuple[str, dict[int, float], dict[int, flo
 
         svg_parts.append(
             f'<polyline points="{elbow_x:.2f},{elbow_y:.2f} {leader_end_x:.2f},{elbow_y:.2f}" '
-            'fill="none" stroke="#5b6472" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>'
+            'fill="none" stroke="#FDFEFE" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>'
         )
-        svg_parts.append(f'<circle cx="{elbow_x:.2f}" cy="{elbow_y:.2f}" r="2.5" fill="#5b6472"/>')
+        svg_parts.append(f'<circle cx="{elbow_x:.2f}" cy="{elbow_y:.2f}" r="2.5" fill="#FDFEFE"/>') 
         svg_parts.append(
             f'<text x="{label_x_side:.2f}" y="{elbow_y:.2f}" text-anchor="{label_anchor}" '
             'dominant-baseline="middle" font-family="DejaVu Sans, Arial, sans-serif" '
-            'font-size="16" font-weight="700" fill="#111827">'
+            'font-size="16" font-weight="700" fill="#FF79C6">'
             f'{saxutils.escape(sector["sector_name"])}'
             "</text>"
         )
 
-    svg_parts.append(f'<circle cx="{cx}" cy="{cy}" r="8" fill="#1f2937"/>')
+    svg_parts.append(f'<circle cx="{cx}" cy="{cy}" r="8" fill="#2b3037"/>')
     svg_parts.append(
-        f'<text x="{cx}" y="1140" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" '
-        'font-size="13" fill="#4b5563">Overlaps display in Dow first, then S&amp;P 500, then Russell 2000</text>'
+        f'<text x="{cx}" y="1315" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" '
+        'font-size="13" fill="#FDFEFE">Overlaps display in Dow first, then S&amp;P 500, then Russell 2000</text>'
     )
 
     legend_x = 70
     legend_y = 70
-    svg_parts.append(f'<g font-family="DejaVu Sans, Arial, sans-serif" font-size="18" fill="#111827">')
+    svg_parts.append(f'<g font-family="DejaVu Sans, Arial, sans-serif" font-size="18" fill="#FDFEFE">')
     svg_parts.append(f'<text x="{legend_x}" y="{legend_y}" font-size="24" font-weight="700">Bands</text>')
     offset_y = 38
     for index in TARGET_INDEXES:
@@ -336,7 +361,7 @@ def write_outputs(svg_text: str) -> None:
     OUTPUT_SVG.write_text(svg_text, encoding="utf-8")
     OUTPUT_HTML.write_text(
         "<!doctype html>\n<html><head><meta charset='utf-8'><title>Owned Sector Map</title>"
-        "<style>body{margin:0;background:#e9edf2;}svg{display:block;width:100vw;height:100vh;}</style>"
+        "<style>body{margin:0;background:#121212;}svg{display:block;width:100vw;height:100vh;}</style>"
         "</head><body>" + svg_text + "</body></html>",
         encoding="utf-8",
     )
