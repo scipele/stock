@@ -22,6 +22,7 @@ echo
 
 echo "   ================== Program #1 - Buy Opportunity Questions ======================="
 read -p "   1.1  Update the current positions (recom daily)? (y/n) " UPDATE_CUR_POSITIONS
+read -p "   1.1a Include Dow tickers? (y/n) " INCLUDE_DOW
 read -p "   1.1b Include S&P 500 tickers? (y/n) " INCLUDE_SP500
 read -p "   1.1c Include Russell 2000 tickers? (y/n) " INCLUDE_RUSSELL
 read -p "   1.1d Include 'other' tickers? (y/n) " INCLUDE_OTHER
@@ -41,6 +42,7 @@ read -p "   3.3  Create the LibreOffice report? (y/n): " CREATE_REPORT
 
 # Convert all user input to lowercase for consistency
 UPDATE_CUR_POSITIONS="${UPDATE_CUR_POSITIONS,,}"
+INCLUDE_DOW="${INCLUDE_DOW,,}"
 INCLUDE_SP500="${INCLUDE_SP500,,}"
 INCLUDE_RUSSELL="${INCLUDE_RUSSELL,,}"
 INCLUDE_OTHER="${INCLUDE_OTHER,,}"
@@ -79,16 +81,18 @@ sed -i 's/BRK.A/BRK-A/g' "$CUR_POS_TICKERS_FILE"
 echo
 
 # ==========================================
-# 1.1b–1.1e COMBINE TICKER LISTS
+# 1.1a–1.1e COMBINE TICKER LISTS
 # ==========================================
-echo "1.1b–1.1e  Combining ticker lists..."
+echo "1.1a–1.1e  Combining ticker lists..."
 echo "           tickers_current_positions.csv (always included)"
+[[ "$INCLUDE_DOW"       == "y" ]] && echo "           1.1a  tickers_dow.csv"
 [[ "$INCLUDE_SP500"     == "y" ]] && echo "           1.1b  tickers_sp_500.csv"
 [[ "$INCLUDE_RUSSELL"    == "y" ]] && echo "           1.1c  tickers_russel_2k.csv"
 [[ "$INCLUDE_OTHER"      == "y" ]] && echo "           1.1d  tickers_other.csv"
 [[ "$INCLUDE_TOP_SCORES" == "y" ]] && echo "           1.1e  tickers_recent_top_scores.csv"
 echo "           → Output: tickers_combined.csv"
-./combine_sort_tickers.sh "$INCLUDE_SP500" "$INCLUDE_RUSSELL" "$INCLUDE_OTHER" "$INCLUDE_TOP_SCORES"
+# combine_sort_tickers.sh expects: include_dow include_sp500 include_russell include_other include_top_scores
+./combine_sort_tickers.sh "$INCLUDE_DOW" "$INCLUDE_SP500" "$INCLUDE_RUSSELL" "$INCLUDE_OTHER" "$INCLUDE_TOP_SCORES"
 echo
 
 # ==========================================
