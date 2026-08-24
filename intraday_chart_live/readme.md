@@ -117,7 +117,7 @@ The script:
 Optional sources:
 - Previous input/tickers.csv list
 - Latest Schwab positions export in Downloads
-  - file pattern: Community Property-Positions-*.csv
+  - file pattern: Fund-Positions-*.csv
   - exclusion regex: etf|fund|money|adm
 - Top buy_opp ranked symbols
   - /home/dev/stock/buy_opp/output/summary_all.csv

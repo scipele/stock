@@ -91,7 +91,7 @@ def find_schwab_data():
     """
     try:
         # Match only files matching your specific Schwab format pattern
-        schwab_files = list(SCHWAB_FOLDER.glob("Community Property-Positions-*.csv"))
+        schwab_files = list(SCHWAB_FOLDER.glob("Fund-Positions-*.csv"))
         
         if not schwab_files:
             print("Warning: No Schwab export files found in Downloads. Proceeding with clean fallbacks.")

@@ -119,7 +119,7 @@ def add_ema(df: pd.DataFrame, length: int = 9) -> pd.Series:
 
 def find_schwab_data():
     try:
-        files = list(SCHWAB_FOLDER.glob("Community Property-Positions-*.csv"))
+        files = list(SCHWAB_FOLDER.glob("Fund-Positions-*.csv"))
         if not files:
             return {}, {}
 

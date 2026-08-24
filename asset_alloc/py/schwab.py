@@ -11,7 +11,7 @@ DOWNLOAD_DIR = Path("/home/ts/Downloads")
 def find_latest_schwab_file():
 
     files = list(
-        DOWNLOAD_DIR.glob("Community Property-Positions-*.csv")
+        DOWNLOAD_DIR.glob("Fund-Positions-*.csv")
     )
 
     if not files:

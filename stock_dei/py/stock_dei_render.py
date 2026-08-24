@@ -47,9 +47,9 @@ ALL_SECTOR_IDS = SECTOR_ORDER
 
 
 def find_latest_positions_file() -> Path:
-    files = list(DOWNLOAD_DIR.glob("Community Property-Positions-*.csv"))
+    files = list(DOWNLOAD_DIR.glob("Fund-Positions-*.csv"))
     if not files:
-        raise FileNotFoundError("No Community Property-Positions-*.csv file found in /home/ts/Downloads")
+        raise FileNotFoundError("No Fund-Positions-*.csv file found in /home/ts/Downloads")
     return max(files, key=lambda path: path.stat().st_mtime)
 
 

@@ -12,7 +12,7 @@ TOP_INTR_BUY_RANK_FILE="/home/dev/stock/intr_buy/output/combined_report.csv"
 EXCLUDE_LINES_WHERE_NAME_CONTAINS="etf|fund|money|adm"
 
 # ------------------------------------------------------------------
-# Helper: load tickers from the latest Community Property-Positions CSV
+# Helper: load tickers from the latest Fund-Positions CSV
 # ------------------------------------------------------------------
 load_positions_from_downloads() {
     local latest_file
@@ -128,7 +128,7 @@ fi
 
 # ----- Option 2.2: load current positions from Downloads -----
 echo
-read -p "    2.2 Load current positions from ~/Downloads (Community Property-Positions-*.csv)? [y/N]: " use_positions
+read -p "    2.2 Load current positions from ~/Downloads (Fund-Positions-*.csv)? [y/N]: " use_positions
 use_positions=${use_positions:-N}
 
 if [[ "$use_positions" =~ ^[Yy]$ ]]; then

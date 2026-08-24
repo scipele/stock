@@ -15,7 +15,7 @@ The script is designed to make it easy to build a list of stocks from several so
 The ticker list can be built from:
 
 * Previously used tickers
-* Current positions from the latest Schwab **Community Property-Positions** export
+* Current positions from the latest Schwab **Fund-Positions** export
 * Top-ranked stocks from the `buy_opp` report
 * Top-ranked stocks from the `intr_buy` report
 * Manually entered tickers
@@ -119,7 +119,7 @@ This is useful when repeatedly reviewing the same group of stocks.
 The script can automatically find the newest file matching:
 
 ```text
-~/Downloads/Community Property-Positions-*.csv
+~/Downloads/Fund-Positions-*.csv
 ```
 
 It selects the most recently modified file.
@@ -127,7 +127,7 @@ It selects the most recently modified file.
 For example:
 
 ```text
-Community Property-Positions-2026-08-18-123456.csv
+Fund-Positions-2026-08-18-123456.csv
 ```
 
 The script extracts the ticker symbols from the Schwab export.
