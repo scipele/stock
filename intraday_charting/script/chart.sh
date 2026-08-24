@@ -16,10 +16,10 @@ EXCLUDE_LINES_WHERE_NAME_CONTAINS="etf|fund|money|adm"
 # ------------------------------------------------------------------
 load_positions_from_downloads() {
     local latest_file
-    latest_file=$(ls -1t "$DOWNLOAD_DIR"/Community\ Property-Positions-*.csv 2>/dev/null | head -n 1)
+    latest_file=$(ls -1t "$DOWNLOAD_DIR"/Fund-Positions-*.csv 2>/dev/null | head -n 1)
 
     if [[ -z "$latest_file" ]]; then
-        echo "Error: No matching Community Property-Positions-*.csv found in $DOWNLOAD_DIR" >&2
+        echo "Error: No matching Fund-Positions-*.csv found in $DOWNLOAD_DIR" >&2
         return 1
     fi
 
