@@ -5,7 +5,7 @@ OUTPUT_FILE="../data/tickers_current_positions.csv"
 EXCLUDE_LINES_WHERE_NAME_CONTAINS="etf|fund|money|adm"
 
 # 1. Find the latest CSV file matching your naming pattern
-LATEST_FILE=$(ls -1t "$DOWNLOAD_DIR"/Community\ Property-Positions-*.csv 2>/dev/null | head -n 1)
+LATEST_FILE=$(ls -1t "$DOWNLOAD_DIR"/Community\Fund-Positions-*.csv 2>/dev/null | head -n 1)
 
 echo "       Latest File: $LATEST_FILE"
 
