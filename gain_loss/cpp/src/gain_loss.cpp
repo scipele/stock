@@ -1,5 +1,6 @@
 /*
-Compiles to: ../bin/gain_loss
+Compile ubuntu
+g++ -std=c++17 -O2 gain_loss.cpp -o ../bin/gain_loss
 */
 
 #include <algorithm>
