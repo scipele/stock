@@ -16,29 +16,41 @@ EXCLUDE_LINES_WHERE_NAME_CONTAINS="etf|fund|money|adm"
 # ------------------------------------------------------------------
 load_positions_from_downloads() {
     local latest_file
-    latest_file=$(ls -1t "$DOWNLOAD_DIR"/Fund-Positions-*.csv 2>/dev/null | head -n 1)
+    latest_file=$(ls -1t "$DOWNLOAD_DIR"/*-Positions-*.csv 2>/dev/null | head -n 1)
 
     if [[ -z "$latest_file" ]]; then
-        echo "Error: No matching Fund-Positions-*.csv found in $DOWNLOAD_DIR" >&2
+        echo "Error: No matching *-Positions-*.csv found in $DOWNLOAD_DIR" >&2
         return 1
     fi
 
     echo "       Using positions file: $latest_file" >&2
 
-    local total_lines
-    total_lines=$(wc -l < "$latest_file")
+    awk -v exclude="$EXCLUDE_LINES_WHERE_NAME_CONTAINS" '
+    {
+        # Skip blank lines
+        if ($0 ~ /^[[:space:]]*$/) next
 
-    awk -F ',' -v total="$total_lines" -v exclude="$EXCLUDE_LINES_WHERE_NAME_CONTAINS" '
-        NR > 3 && NR <= total - 2 {
-            gsub(/"/, "", $0)
-            split($0, fields, ",")
-            ticker = fields[1]
-            description = fields[2]
-            if (tolower(description) !~ exclude) {
-                if (ticker != "") print ticker
-            }
+        # Extract only the first two quoted fields ("ticker","description")
+        # This is immune to commas that appear later in the line ($4,313.19 etc.)
+        if (match($0, /^"([^"]*)","([^"]*)"/, a)) {
+            ticker      = a[1]
+            description = a[2]
+        } else {
+            # Account headers, title lines, etc.
+            next
         }
-    ' "$latest_file"
+
+        # Skip the real column header, Cash rows and Positions Total rows
+        if (ticker == "Symbol" ||
+            ticker == "Cash & Cash Investments" ||
+            ticker == "Positions Total" ||
+            ticker == "") next
+
+        # Existing description-based exclusion
+        if (tolower(description) !~ exclude) {
+            print ticker
+        }
+    }' "$latest_file"
 }
 
 
