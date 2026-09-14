@@ -287,11 +287,13 @@ struct Position
 struct Transaction
 {
     Date date;
+    std::string account_id;
     std::string action;
     std::string symbol;
     std::string description;
     double quantity = 0.0;
     double price = 0.0;
+    double fees = 0.0;
     size_t original_order = 0;
 };
 
@@ -382,16 +384,20 @@ std::vector<Transaction> read_transactions(const fs::path& filename)
 
     auto header = parse_csv_line(line);
     int date_col = -1;
+    int account_col = -1;
     int action_col = -1;
     int symbol_col = -1;
     int qty_col = -1;
     int price_col = -1;
+    int fees_col = -1;
 
     for (size_t i = 0; i < header.size(); ++i)
     {
         std::string h = remove_quotes(header[i]);
         if (h == "Date")
             date_col = static_cast<int>(i);
+        else if (h == "AccountId")
+            account_col = static_cast<int>(i);
         else if (h == "Action")
             action_col = static_cast<int>(i);
         else if (h == "Symbol")
@@ -400,6 +406,8 @@ std::vector<Transaction> read_transactions(const fs::path& filename)
             qty_col = static_cast<int>(i);
         else if (h == "Price")
             price_col = static_cast<int>(i);
+        else if (h == "Fees & Comm")
+            fees_col = static_cast<int>(i);
     }
 
     if (date_col < 0 || action_col < 0 || symbol_col < 0 || qty_col < 0)
@@ -421,6 +429,10 @@ std::vector<Transaction> read_transactions(const fs::path& filename)
 
         Transaction t;
         t.date = parse_date(fields[date_col]);
+
+        if (account_col >= 0 && account_col < static_cast<int>(fields.size()))
+            t.account_id = remove_quotes(fields[account_col]);
+
         t.action = remove_quotes(fields[action_col]);
         std::transform(t.action.begin(), t.action.end(), t.action.begin(), [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
         t.symbol = remove_quotes(fields[symbol_col]);
@@ -428,6 +440,9 @@ std::vector<Transaction> read_transactions(const fs::path& filename)
 
         if (price_col >= 0 && price_col < static_cast<int>(fields.size()))
             t.price = std::fabs(to_double(fields[price_col]));
+
+        if (fees_col >= 0 && fees_col < static_cast<int>(fields.size()))
+            t.fees = std::fabs(to_double(fields[fees_col]));
 
         t.original_order = order++;
 
@@ -494,9 +509,11 @@ std::map<std::string, std::map<std::string, DailySymbolSummary>> compute_daily_g
         if (!tx.date.valid())
             continue;
 
+        std::string lot_key = tx.account_id.empty() ? tx.symbol : tx.account_id + "|" + tx.symbol;
+
         if (tx.action == "BUY")
         {
-            lots_by_symbol[tx.symbol].push_back({tx.date, tx.quantity, tx.price});
+            lots_by_symbol[lot_key].push_back({tx.date, tx.quantity, tx.price});
             continue;
         }
 
@@ -504,7 +521,7 @@ std::map<std::string, std::map<std::string, DailySymbolSummary>> compute_daily_g
             continue;
 
         double remaining = tx.quantity;
-        auto& lots = lots_by_symbol[tx.symbol];
+        auto& lots = lots_by_symbol[lot_key];
         size_t idx = 0;
 
         while (remaining > EPSILON && idx < lots.size())
@@ -522,7 +539,8 @@ std::map<std::string, std::map<std::string, DailySymbolSummary>> compute_daily_g
                 int held_days = days_between(lot.date, tx.date);
                 std::string day_key = date_to_string(tx.date);
                 auto& summary = daily_results[day_key][tx.symbol];
-                summary.gain += matched * (tx.price - lot.price);
+                double fee_share = tx.quantity > EPSILON ? tx.fees * (matched / tx.quantity) : 0.0;
+                summary.gain += matched * (tx.price - lot.price) - fee_share;
                 summary.weighted_days += static_cast<double>(held_days) * matched;
                 summary.matched_quantity += matched;
             }
@@ -629,8 +647,25 @@ int main(int argc, char* argv[])
 
     fs::create_directories(OUTPUT_DIR);
 
-    fs::path positions_file = find_newest_positions_file();
-    fs::path transactions_file = find_newest_transactions_file();
+    fs::path prepared_positions_file = fs::path(OUTPUT_DIR) / "positions.csv";
+    fs::path prepared_transactions_file = fs::path(OUTPUT_DIR) / "transactions.csv";
+
+    fs::path positions_file;
+    fs::path transactions_file;
+    bool using_prepared_files = false;
+
+    if (fs::exists(prepared_positions_file) && fs::exists(prepared_transactions_file))
+    {
+        positions_file = prepared_positions_file;
+        transactions_file = prepared_transactions_file;
+        using_prepared_files = true;
+        std::cout << "Using prepared input files from output directory.\n";
+    }
+    else
+    {
+        positions_file = find_newest_positions_file();
+        transactions_file = find_newest_transactions_file();
+    }
 
     if (positions_file.empty())
     {
@@ -659,8 +694,11 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    copy_source_file(positions_file, "positions.csv");
-    copy_source_file(transactions_file, "transactions.csv");
+    if (!using_prepared_files)
+    {
+        copy_source_file(positions_file, "positions.csv");
+        copy_source_file(transactions_file, "transactions.csv");
+    }
 
     auto daily = compute_daily_gain_results(transactions, start, end);
     write_gain_loss_csv(daily);

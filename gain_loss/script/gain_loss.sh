@@ -57,7 +57,7 @@ fi
 
 mkdir -p "$OUTPUT_DIR"
 
-if [ ! -x "$CPP_PROGRAM" ]; then
+if [ ! -x "$CPP_PROGRAM" ] || [ "$CPP_SRC" -nt "$CPP_PROGRAM" ]; then
     echo "Compiling C++ gain/loss calculator..."
     g++ -std=c++17 -O2 "$CPP_SRC" -o "$CPP_PROGRAM"
 fi
@@ -72,81 +72,104 @@ fi
 cp "$POSITIONS_SOURCE" "$OUTPUT_DIR/positions.csv"
 echo "Using positions file: $(basename "$POSITIONS_SOURCE")"
 
-# ---------- Transactions: find latest file for each account, then merge + sort ----------
-# Group by account key (everything before _Transactions_) and keep only the newest timestamp for each.
-declare -A LATEST_TXN   # account_key → full path of newest file
+# ---------- Transactions: pick best history file per account, then merge + sort ----------
+# Group by masked account key (e.g. XXX456). If multiple exports exist for the same
+# account, keep the file with the most transaction rows (tie-breaker: newest timestamp).
+declare -A BEST_TXN     # account_key -> full path of chosen file
+declare -A BEST_ROWS    # account_key -> row count in chosen file
+declare -A BEST_TS      # account_key -> timestamp from filename
 
 while IFS= read -r -d '' file; do
     base=$(basename "$file")
-    # Extract account key: everything before "_Transactions_"
+    # Extract account key + export timestamp from filename.
     if [[ "$base" =~ ^(.+)_Transactions_([0-9]{8}-[0-9]{6})\.csv$ ]]; then
-        key="${BASH_REMATCH[1]}"
+        raw_key="${BASH_REMATCH[1]}"
         ts="${BASH_REMATCH[2]}"
-        if [[ -z "${LATEST_TXN[$key]}" ]]; then
-            LATEST_TXN[$key]="$file"
+
+        # Prefer the masked account id (e.g. XXX456) to avoid duplicate exports
+        # that represent the same account under different prefixes.
+        if [[ "$raw_key" =~ (XXX[0-9]+)$ ]]; then
+            key="${BASH_REMATCH[1]}"
         else
-            # Compare timestamps from the filenames (YYYYMMDD-HHMMSS sorts correctly as strings)
-            existing_base=$(basename "${LATEST_TXN[$key]}")
-            if [[ "$existing_base" =~ _Transactions_([0-9]{8}-[0-9]{6})\.csv$ ]]; then
-                existing_ts="${BASH_REMATCH[1]}"
-                if [[ "$ts" > "$existing_ts" ]]; then
-                    LATEST_TXN[$key]="$file"
-                fi
-            fi
+            key="$raw_key"
+        fi
+
+        header_line=$(grep -n -m1 '^"Date","Action","Symbol"' "$file" | cut -d':' -f1)
+        if [ -z "$header_line" ]; then
+            echo "WARNING: Skipping file with unrecognized header: $(basename "$file")"
+            continue
+        fi
+
+        data_start=$((header_line + 1))
+        row_count=$(tail -n +"$data_start" "$file" | grep -v -E '^(,"?Transactions Total|"?Transactions Total)' | wc -l)
+
+        existing_rows="${BEST_ROWS[$key]:--1}"
+        existing_ts="${BEST_TS[$key]:-}"
+
+        if (( row_count > existing_rows )) || { (( row_count == existing_rows )) && [[ "$ts" > "$existing_ts" ]]; }; then
+            BEST_TXN[$key]="$file"
+            BEST_ROWS[$key]="$row_count"
+            BEST_TS[$key]="$ts"
         fi
     fi
 done < <(find "$DOWNLOAD_DIR" -maxdepth 1 -type f -name '*_Transactions_*.csv' -print0)
 
-if [ ${#LATEST_TXN[@]} -eq 0 ]; then
+if [ ${#BEST_TXN[@]} -eq 0 ]; then
     echo "ERROR: No Schwab Transactions files found in: $DOWNLOAD_DIR"
     exit 1
 fi
 
-echo "Found latest transactions files for ${#LATEST_TXN[@]} account(s):"
-for key in "${!LATEST_TXN[@]}"; do
-    echo "  $key → $(basename "${LATEST_TXN[$key]}")"
+echo "Selected transaction history files for ${#BEST_TXN[@]} account(s):"
+for key in "${!BEST_TXN[@]}"; do
+    echo "  $key → $(basename "${BEST_TXN[$key]}") (rows: ${BEST_ROWS[$key]})"
 done
 
 # Merge into a temporary file, then sort by Date
 MERGED_TMP=$(mktemp)
 HEADER_WRITTEN=0
 
-for key in "${!LATEST_TXN[@]}"; do
-    file="${LATEST_TXN[$key]}"
-    # Schwab CSVs typically have:
-    #   line 1: "Transactions for account ... as of ..."
-    #   line 2: "Date","Action","Symbol",...
-    #   then data rows
-    #   possibly a "Transactions Total" line at the end
-    # We skip the first line and any total/summary lines.
+for key in "${!BEST_TXN[@]}"; do
+    file="${BEST_TXN[$key]}"
+    # Schwab CSV layouts can vary. Detect the real header line instead of assuming line numbers.
+    header_line=$(grep -n -m1 '^"Date","Action","Symbol"' "$file" | cut -d':' -f1)
+    if [ -z "$header_line" ]; then
+        echo "WARNING: Skipping file with unrecognized header: $(basename "$file")"
+        continue
+    fi
 
     if [ "$HEADER_WRITTEN" -eq 0 ]; then
-        # Keep the header row (2nd line)
-        sed -n '2p' "$file" > "$MERGED_TMP"
+        header_row=$(sed -n "${header_line}p" "$file")
+        echo "\"AccountId\",${header_row}" > "$MERGED_TMP"
         HEADER_WRITTEN=1
     fi
 
-    # Append data rows only (skip line 1 and any line that looks like a total)
-    tail -n +3 "$file" | grep -v -E '^(,"?Transactions Total|"?Transactions Total)' >> "$MERGED_TMP" || true
+    data_start=$((header_line + 1))
+    tail -n +"$data_start" "$file" | \
+    grep -v -E '^(,"?Transactions Total|"?Transactions Total)' | \
+    awk -v acct="$key" '{ print "\"" acct "\"," $0 }' >> "$MERGED_TMP" || true
 done
+
+if [ "$HEADER_WRITTEN" -eq 0 ]; then
+    echo "ERROR: Could not find a valid transactions CSV header in selected files."
+    rm -f "$MERGED_TMP"
+    exit 1
+fi
 
 # Sort by the Date column (first column). Dates are MM/DD/YYYY so we convert for proper ordering.
 # Output final sorted file.
 {
     # Keep header
     head -n 1 "$MERGED_TMP"
-    # Sort data rows by converting MM/DD/YYYY → YYYYMMDD for numeric sort, then restore original
+    # Sort data rows by converting MM/DD/YYYY in the Date column to YYYYMMDD, then restore original.
     tail -n +2 "$MERGED_TMP" | \
     awk -F',' '
     {
-        # Extract date from first field (handles quoted or unquoted)
-        date = $1
-        gsub(/^"/, "", date)
-        gsub(/".*$/, "", date)          # strip anything after date (e.g. " as of ...")
+        date = $2
+        gsub(/"/, "", date)
+        if (match(date, /[0-9]{1,2}\/[0-9]{1,2}\/[0-9]{4}/) == 0) next
+        date = substr(date, RSTART, RLENGTH)
         split(date, d, "/")
-        if (length(d[1]) == 1) d[1] = "0" d[1]
-        if (length(d[2]) == 1) d[2] = "0" d[2]
-        sortkey = d[3] d[1] d[2]
+        sortkey = sprintf("%04d%02d%02d", d[3], d[1], d[2])
         print sortkey "," $0
     }' | sort -t',' -k1,1 | cut -d',' -f2-
 } > "$OUTPUT_DIR/transactions.csv"
@@ -155,6 +178,27 @@ rm -f "$MERGED_TMP"
 
 echo "Merged & sorted transactions written to: $OUTPUT_DIR/transactions.csv"
 echo "  (total data rows: $(( $(wc -l < "$OUTPUT_DIR/transactions.csv") - 1 )))"
+
+LATEST_TXN_DATE=$(awk -F',' '
+NR > 1 {
+    date = $2
+    gsub(/"/, "", date)
+    if (match(date, /[0-9]{1,2}\/[0-9]{1,2}\/[0-9]{4}/) == 0) next
+    date = substr(date, RSTART, RLENGTH)
+    split(date, d, "/")
+    key = sprintf("%04d%02d%02d", d[3], d[1], d[2])
+    if (key > max_key) {
+        max_key = key
+        max_date = date
+    }
+}
+END {
+    print max_date
+}' "$OUTPUT_DIR/transactions.csv")
+
+if [ -n "$LATEST_TXN_DATE" ]; then
+    echo "  (latest transaction date in merged file: $LATEST_TXN_DATE)"
+fi
 
 # ---------- Rest of the pipeline (unchanged) ----------
 echo "Running gain/loss calculation for: $START_DATE to $END_DATE"
