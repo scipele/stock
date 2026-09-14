@@ -209,7 +209,7 @@ if [ ! -f "$OUTPUT_DIR/gain_loss.csv" ]; then
     exit 1
 fi
 
-"$PYTHON" "$PYTHON_SCRIPT"
+"$PYTHON" "$PYTHON_SCRIPT" "$START_DATE" "$END_DATE"
 
 if [ ! -f "$REPORT_FILE" ]; then
     echo "ERROR: HTML report was not created: $REPORT_FILE"
