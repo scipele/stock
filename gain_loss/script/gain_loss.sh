@@ -10,6 +10,7 @@ PYTHON_SCRIPT="$BASE_DIR/py/create_report.py"
 OUTPUT_DIR="$BASE_DIR/output"
 REPORT_FILE="$OUTPUT_DIR/days_held.html"
 DOWNLOAD_DIR="/home/ts/Downloads"
+DEFAULT_START_DATE="07/09/2026"
 
 START_DATE="${1:-}"
 END_DATE="${2:-}"
@@ -31,12 +32,14 @@ read_date_or_today() {
 
 if [ -z "$START_DATE" ] || [ -z "$END_DATE" ]; then
     if [ -t 0 ]; then
-        START_DATE="$(read_date_or_today "Enter start date (MM/DD/YYYY)")"
+        printf 'Enter start date (MM/DD/YYYY) [%s]: ' "$DEFAULT_START_DATE" >&2
+        IFS= read -r input_start
+        START_DATE="${input_start:-$DEFAULT_START_DATE}"
         END_DATE="$(read_date_or_today "Enter end date (MM/DD/YYYY)")"
     else
-        START_DATE="$(date +%m/%d/%Y)"
+        START_DATE="$DEFAULT_START_DATE"
         END_DATE="$(date +%m/%d/%Y)"
-        echo "No interactive terminal detected; defaulting start and end dates to today: $START_DATE to $END_DATE"
+        echo "No interactive terminal detected; defaulting start date to $START_DATE and end date to today: $END_DATE"
     fi
 fi
 
@@ -215,6 +218,24 @@ if [ ! -f "$REPORT_FILE" ]; then
     echo "ERROR: HTML report was not created: $REPORT_FILE"
     exit 1
 fi
+
+open_report() {
+    if command -v gio >/dev/null 2>&1; then
+        gio open "$REPORT_FILE" >/dev/null 2>&1 && return 0
+    fi
+
+    if command -v xdg-open >/dev/null 2>&1; then
+        xdg-open "$REPORT_FILE" >/dev/null 2>&1 && return 0
+    fi
+
+    if command -v code >/dev/null 2>&1; then
+        code "$REPORT_FILE" >/dev/null 2>&1 && return 0
+    fi
+
+    return 1
+}
+
+open_report || echo "WARNING: Could not open report automatically."
 
 echo "Completed successfully."
 echo "Report: $REPORT_FILE"
