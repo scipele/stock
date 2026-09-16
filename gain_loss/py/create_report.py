@@ -1040,13 +1040,13 @@ page = f"""<!DOCTYPE html>
             </div>
         </div>
     <div class=\"chart-block\">
-            <div class="chart-title">Cumulative Realized vs Unrealized Loss vs Net vs VOO Benchmark</div>
+            <div class="chart-title">Cumulative Realized Gain/Loss</div>
       <div class=\"chart-wrap\">
         {chart_svg}
       </div>
     </div>
         <div class=\"chart-block\">
-            <div class=\"chart-title\">Cumulative Realized vs Unrealized Loss vs Net</div>
+            <div class=\"chart-title\">Cumulative Realized/Unrealized/Net Gain/Loss vs VOO Benchmark Comparison</div>
             <div class=\"chart-wrap\">
                 {compare_chart_svg}
             </div>
