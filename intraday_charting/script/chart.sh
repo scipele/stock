@@ -7,6 +7,7 @@ CHART_DIR="/home/dev/stock/intraday_charting/charts"
 DOWNLOAD_DIR="$HOME/Downloads"
 TOP_BUY_OPP_RANK_FILE="/home/dev/stock/buy_opp/output/summary_all.csv"
 TOP_INTR_BUY_RANK_FILE="/home/dev/stock/intr_buy/output/combined_report.csv"
+TOP_OVERALL_WEIGHTED_FILE="/home/dev/stock/buy_opp/output/summary_all.csv"
 
 # Words to exclude from position descriptions (case-insensitive)
 EXCLUDE_LINES_WHERE_NAME_CONTAINS="etf|fund|money|adm"
@@ -65,6 +66,20 @@ load_top_ranked() {
     fi
     # Column 3 = ticker, skip header, take first $num rows
     awk -F ',' 'NR>1 {print $3}' "$TOP_BUY_OPP_RANK_FILE" | head -n "$num"
+}
+
+
+# ------------------------------------------------------------------
+# Helper: load top overall weighted scoring stocks from summary_all.csv
+# ------------------------------------------------------------------
+load_top_overall_weighted() {
+    local num="$1"
+    if [[ ! -f "$TOP_OVERALL_WEIGHTED_FILE" ]]; then
+        echo "Error: $TOP_OVERALL_WEIGHTED_FILE not found." >&2
+        return 1
+    fi
+    # Column 3 = ticker, skip header, take first $num rows
+    awk -F ',' 'NR>1 {print $3}' "$TOP_OVERALL_WEIGHTED_FILE" | head -n "$num"
 }
 
 
@@ -158,15 +173,37 @@ if [[ "$use_positions" =~ ^[Yy]$ ]]; then
 fi
 
 
-# ----- Option 2.3: append top-buy_opp_ranked stocks -----
+# ----- Option 2.3: append top overall weighted scoring -----
 echo
-read -p "    2.3 Append top-buy_opp_ranked stocks? [y/N]: " use_top
+read -p "    2.3 Append Top Overall Weighted Scoring? [y/N]: " use_top_overall
+use_top_overall=${use_top_overall:-N}
+
+if [[ "$use_top_overall" =~ ^[Yy]$ ]]; then
+    read -p "        How many top stocks would you like to add? " num_stocks
+    if ! [[ "$num_stocks" =~ ^[0-9]+$ ]] || [[ "$num_stocks" -eq 0 ]]; then
+        echo "        Invalid number - skipping Top Overall Weighted Scoring."
+    else
+        mapfile -t top_overall_tickers < <(load_top_overall_weighted "$num_stocks")
+        if [[ ${#top_overall_tickers[@]} -eq 0 ]]; then
+            echo "        No Top Overall Weighted Scoring tickers found."
+        else
+            echo "        Adding top ${#top_overall_tickers[@]} overall weighted stocks:"
+            print_indented_list "           " "${top_overall_tickers[*]}"
+            tickers+=("${top_overall_tickers[@]}")
+        fi
+    fi
+fi
+
+
+# ----- Option 2.4: append top-buy_opp_ranked stocks -----
+echo
+read -p "    2.4 Append top-buy_opp_ranked stocks? [y/N]: " use_top
 use_top=${use_top:-N}
 
 if [[ "$use_top" =~ ^[Yy]$ ]]; then
     read -p "        How many top stocks would you like to add? " num_stocks
     if ! [[ "$num_stocks" =~ ^[0-9]+$ ]] || [[ "$num_stocks" -eq 0 ]]; then
-        echo "        Invalid number – skipping top-buy_opp_ranked stocks."
+        echo "        Invalid number - skipping top-buy_opp_ranked stocks."
     else
         mapfile -t top_tickers < <(load_top_ranked "$num_stocks")
         if [[ ${#top_tickers[@]} -eq 0 ]]; then
@@ -180,9 +217,9 @@ if [[ "$use_top" =~ ^[Yy]$ ]]; then
 fi
 
 
-# ----- Option 2.4: append top-intr_buy ranked stocks -----
+# ----- Option 2.5: append top-intr_buy ranked stocks -----
 echo
-read -p "    2.4 Append top-intr_buy ranked stocks? [y/N]: " use_top_intr_buy
+read -p "    2.5 Append top-intr_buy ranked stocks? [y/N]: " use_top_intr_buy
 use_top_intr_buy=${use_top_intr_buy:-N}
 
 if [[ "$use_top_intr_buy" =~ ^[Yy]$ ]]; then
@@ -202,9 +239,9 @@ if [[ "$use_top_intr_buy" =~ ^[Yy]$ ]]; then
 fi
 
 
-# ----- Option 5: manually add extra tickers -----
+# ----- Option 2.6: manually add extra tickers -----
 echo
-read -p "    2.5 Manually add any additional tickers? [y/N]: " add_manual
+read -p "    2.6 Manually add any additional tickers? [y/N]: " add_manual
 
 add_manual=${add_manual:-N}
 
@@ -227,7 +264,7 @@ fi
 
 
 # ------------------------------------------------------------------
-# 2.6 Deduplicate, sort, show final list, confirm
+# 2.7 Deduplicate, sort, show final list, confirm
 # ------------------------------------------------------------------
 mapfile -t sorted_tickers < <(
     printf '%s\n' "${tickers[@]}" \
@@ -237,7 +274,7 @@ mapfile -t sorted_tickers < <(
 )
 
 echo
-echo "    2.6 Final sorted ticker list (${#sorted_tickers[@]} tickers):"
+echo "    2.7 Final sorted ticker list (${#sorted_tickers[@]} tickers):"
 # Join sorted_tickers with commas (no trailing comma)
 joined=$(IFS=,; echo "${sorted_tickers[*]}")
 print_indented_list "        " "$joined"
