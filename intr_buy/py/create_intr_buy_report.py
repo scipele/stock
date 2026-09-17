@@ -1,8 +1,11 @@
 #!/usr/bin/python3
 
 import os
+import shutil
 import subprocess
+import tempfile
 import time
+import uuid
 import uno
 
 from com.sun.star.beans import PropertyValue
@@ -12,7 +15,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 CSV_FILE = os.path.join(BASE_DIR, "../output/combined_report.csv")
 ODS_FILE = os.path.join(BASE_DIR, "../output/combined_report.ods")
-UNO_PIPE_NAME = "intr_buy_report_pipe"
+UNO_CONNECT_RETRIES = 30
+UNO_RETRY_DELAY_SEC = 1
 
 
 SECTOR_NAME_MAP = {
@@ -93,161 +97,178 @@ def main():
 
     print("       Starting LibreOffice report creation...")
 
+    pipe_name = f"intr_buy_report_pipe_{uuid.uuid4().hex[:8]}"
+    profile_dir = tempfile.mkdtemp(prefix="intr_buy_lo_")
+    user_install_url = uno.systemPathToFileUrl(profile_dir)
 
-    subprocess.Popen(
-        [
-            "libreoffice",
-            "--headless",
-            f"--accept=pipe,name={UNO_PIPE_NAME};urp;",
-            "--norestore",
-            "--nofirststartwizard"
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL
+    office_cmd = [
+        "libreoffice",
+        "--headless",
+        "--invisible",
+        "--nologo",
+        "--nodefault",
+        "--nolockcheck",
+        "--norestore",
+        "--nofirststartwizard",
+        f"-env:UserInstallation={user_install_url}",
+        f"--accept=pipe,name={pipe_name};urp;",
+    ]
+
+    office_proc = subprocess.Popen(
+        office_cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
     )
 
-    time.sleep(2)
+    doc = None
+    desktop = None
 
+    try:
+        local_ctx = uno.getComponentContext()
 
-    local_ctx = uno.getComponentContext()
+        resolver = local_ctx.ServiceManager.createInstanceWithContext(
+            "com.sun.star.bridge.UnoUrlResolver",
+            local_ctx
+        )
 
-    resolver = local_ctx.ServiceManager.createInstanceWithContext(
-        "com.sun.star.bridge.UnoUrlResolver",
-        local_ctx
-    )
+        ctx = None
 
+        for _ in range(UNO_CONNECT_RETRIES):
+            if office_proc.poll() is not None:
+                _, err = office_proc.communicate(timeout=1)
+                raise RuntimeError(
+                    "LibreOffice exited before UNO listener became ready. "
+                    f"stderr: {err.strip() or 'n/a'}"
+                )
 
-    ctx = None
+            try:
+                ctx = resolver.resolve(
+                    f"uno:pipe,name={pipe_name};urp;StarOffice.ComponentContext"
+                )
+                break
+            except Exception:
+                time.sleep(UNO_RETRY_DELAY_SEC)
 
-    for _ in range(15):
-        try:
-            ctx = resolver.resolve(
-                f"uno:pipe,name={UNO_PIPE_NAME};urp;StarOffice.ComponentContext"
+        if ctx is None:
+            raise RuntimeError(
+                "Unable to connect to LibreOffice listener via UNO pipe "
+                f"'{pipe_name}'"
             )
-            break
-        except Exception:
-            time.sleep(1)
 
-    if ctx is None:
-        raise RuntimeError(
-            "Unable to connect to LibreOffice listener on port 2002"
+        smgr = ctx.ServiceManager
+
+        desktop = smgr.createInstanceWithContext(
+            "com.sun.star.frame.Desktop",
+            ctx
+        )
+
+        doc = desktop.loadComponentFromURL(
+            uno.systemPathToFileUrl(os.path.abspath(CSV_FILE)),
+            "_blank",
+            0,
+            (
+                prop("FilterName", "Text - txt - csv (StarCalc)"),
+                prop("FilterOptions", "44,34,0,1"),
+                prop("Hidden", True),
+                prop("ReadOnly", True),
+            )
         )
 
 
-    smgr = ctx.ServiceManager
-
-    desktop = smgr.createInstanceWithContext(
-        "com.sun.star.frame.Desktop",
-        ctx
-    )
+        sheet = doc.Sheets.getByIndex(0)
 
 
-    doc = desktop.loadComponentFromURL(
-        uno.systemPathToFileUrl(os.path.abspath(CSV_FILE)),
-        "_blank",
-        0,
-        (
-            prop("FilterName", "Text - txt - csv (StarCalc)"),
-            prop("FilterOptions", "44,34,0,1"),
-            prop("Hidden", True),
-            prop("ReadOnly", True),
-        )
-    )
+        cursor = sheet.createCursor()
+        cursor.gotoEndOfUsedArea(True)
 
-
-    sheet = doc.Sheets.getByIndex(0)
-
-
-    cursor = sheet.createCursor()
-    cursor.gotoEndOfUsedArea(True)
-
-    end_row = cursor.RangeAddress.EndRow
-    end_col = cursor.RangeAddress.EndColumn
+        end_row = cursor.RangeAddress.EndRow
+        end_col = cursor.RangeAddress.EndColumn
 
 
     # -------------------------------------------------
     # Convert Sector integer to text
     # -------------------------------------------------
 
-    sector_col = find_column_index(sheet, end_col, "Sector")
-    exch_col = find_column_index(sheet, end_col, "Exch")
-    index_col = find_column_index(sheet, end_col, "Index")
+        sector_col = find_column_index(sheet, end_col, "Sector")
+        exch_col = find_column_index(sheet, end_col, "Exch")
+        index_col = find_column_index(sheet, end_col, "Index")
 
 
-    if sector_col is not None:
+        if sector_col is not None:
 
-        for row in range(1, end_row + 1):
+            for row in range(1, end_row + 1):
 
-            cell = sheet.getCellByPosition(
-                sector_col,
-                row
-            )
+                cell = sheet.getCellByPosition(
+                    sector_col,
+                    row
+                )
 
-            code = get_cell_int_value(cell)
+                code = get_cell_int_value(cell)
 
-            if code in SECTOR_NAME_MAP:
-                cell.setString(SECTOR_NAME_MAP[code])
-
-
-    if exch_col is not None:
-
-        for row in range(1, end_row + 1):
-
-            cell = sheet.getCellByPosition(
-                exch_col,
-                row
-            )
-
-            code = get_cell_int_value(cell)
-            if code in EXCH_CODE_MAP:
-                cell.setString(EXCH_CODE_MAP[code])
+                if code in SECTOR_NAME_MAP:
+                    cell.setString(SECTOR_NAME_MAP[code])
 
 
-    if index_col is not None:
+        if exch_col is not None:
 
-        for row in range(1, end_row + 1):
+            for row in range(1, end_row + 1):
 
-            cell = sheet.getCellByPosition(
-                index_col,
-                row
-            )
+                cell = sheet.getCellByPosition(
+                    exch_col,
+                    row
+                )
 
-            code = get_cell_int_value(cell)
-            label = format_index_labels(code)
+                code = get_cell_int_value(cell)
+                if code in EXCH_CODE_MAP:
+                    cell.setString(EXCH_CODE_MAP[code])
 
-            if label:
-                cell.setString(label)
+
+        if index_col is not None:
+
+            for row in range(1, end_row + 1):
+
+                cell = sheet.getCellByPosition(
+                    index_col,
+                    row
+                )
+
+                code = get_cell_int_value(cell)
+                label = format_index_labels(code)
+
+                if label:
+                    cell.setString(label)
 
 
     # -------------------------------------------------
     # Freeze header
     # -------------------------------------------------
 
-    controller = doc.getCurrentController()
+        controller = doc.getCurrentController()
 
-    controller.freezeAtPosition(
-        0,
-        1
-    )
+        controller.freezeAtPosition(
+            0,
+            1
+        )
 
 
     # -------------------------------------------------
     # Auto filter
     # -------------------------------------------------
 
-    database_ranges = doc.DatabaseRanges
+        database_ranges = doc.DatabaseRanges
 
-    if not database_ranges.hasByName("ReportRange"):
+        if not database_ranges.hasByName("ReportRange"):
 
-        database_ranges.addNewByName(
-            "ReportRange",
-            cursor.RangeAddress
-        )
+            database_ranges.addNewByName(
+                "ReportRange",
+                cursor.RangeAddress
+            )
 
 
-    database_ranges.getByName(
-        "ReportRange"
-    ).AutoFilter = True
+        database_ranges.getByName(
+            "ReportRange"
+        ).AutoFilter = True
 
 
 
@@ -255,22 +276,22 @@ def main():
     # Format
     # -------------------------------------------------
 
-    for col in range(end_col + 1):
+        for col in range(end_col + 1):
 
-        sheet.Columns.getByIndex(
-            col
-        ).OptimalWidth = True
+            sheet.Columns.getByIndex(
+                col
+            ).OptimalWidth = True
 
 
 
-    header = sheet.getCellRangeByPosition(
-        0,
-        0,
-        end_col,
-        0
-    )
+        header = sheet.getCellRangeByPosition(
+            0,
+            0,
+            end_col,
+            0
+        )
 
-    header.CharWeight = 150
+        header.CharWeight = 150
 
 
 
@@ -278,30 +299,42 @@ def main():
     # Save ODS
     # -------------------------------------------------
 
-    doc.storeAsURL(
-        uno.systemPathToFileUrl(
-            os.path.abspath(ODS_FILE)
-        ),
-        (
-            prop(
-                "FilterName",
-                "calc8"
+        doc.storeAsURL(
+            uno.systemPathToFileUrl(
+                os.path.abspath(ODS_FILE)
             ),
+            (
+                prop(
+                    "FilterName",
+                    "calc8"
+                ),
+            )
         )
-    )
 
+        print(
+            f"       Created: {ODS_FILE}"
+        )
+    finally:
+        if doc is not None:
+            try:
+                doc.close(True)
+            except Exception:
+                pass
 
-    doc.close(True)
+        if desktop is not None:
+            try:
+                desktop.terminate()
+            except Exception:
+                pass
 
+        if office_proc.poll() is None:
+            office_proc.terminate()
+            try:
+                office_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                office_proc.kill()
 
-    subprocess.run(
-        ["pkill", "-f", "soffice.bin"]
-    )
-
-
-    print(
-        f"       Created: {ODS_FILE}"
-    )
+        shutil.rmtree(profile_dir, ignore_errors=True)
 
 
 

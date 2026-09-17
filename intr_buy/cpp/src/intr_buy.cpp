@@ -11,6 +11,8 @@ g++ -std=c++17 -O2 intr_buy.cpp -o ../bin/intr_buy
 #include <algorithm>
 #include <iomanip>
 #include <cmath>
+#include <filesystem>
+#include <cctype>
 
 using namespace std;
 
@@ -24,9 +26,11 @@ struct Config
     string buyFile;
     string intrinsicFile;
     string outputFile;
+    string analystFile = "auto";
 
-    double buyWeight = 0.85;
-    double intrinsicWeight = 0.15;
+    double buyWeight = 0.55;
+    double intrinsicWeight = 0.20;
+    double analystWeight = 0.25;
 
     double consensusMax = 10.0;
     double consensusPenalty = 0.50;
@@ -53,7 +57,18 @@ struct Stock
     double combinedScore = 0;
     double buyScore = 0;
     double intrinsicScore = 0;
+    double analystScore = 0;
     double consensusBonus = 0;
+
+    double marketEdgePoints = 0;
+    double schwabPoints = 0;
+    double morningstarStarsPoints = 0;
+    double moatPoints = 0;
+
+    string marketEdgeRating;
+    string schwabRating;
+    string morningstarRating;
+    string moatRating;
 
 
     // Price / valuation
@@ -126,6 +141,94 @@ vector<string> splitCSV(const string& line)
     return result;
 }
 
+string trim(const string& value)
+{
+    const size_t start = value.find_first_not_of(" \t\r\n");
+
+    if(start == string::npos)
+        return "";
+
+    const size_t end = value.find_last_not_of(" \t\r\n");
+    return value.substr(start, end - start + 1);
+}
+
+string toUpper(string value)
+{
+    transform(
+        value.begin(),
+        value.end(),
+        value.begin(),
+        [](unsigned char c)
+        {
+            return static_cast<char>(toupper(c));
+        });
+
+    return value;
+}
+
+string normalizeHeaderKey(string value)
+{
+    string out;
+
+    for(unsigned char c : value)
+    {
+        if(isalnum(c))
+            out += static_cast<char>(tolower(c));
+    }
+
+    return out;
+}
+
+bool readCSVRecord(ifstream& file, string& record)
+{
+    record.clear();
+
+    string line;
+    bool sawLine = false;
+    bool inQuotes = false;
+
+    while(getline(file, line))
+    {
+        if(sawLine)
+            record += "\n";
+
+        record += line;
+        sawLine = true;
+
+        for(char c : line)
+        {
+            if(c == '"')
+                inQuotes = !inQuotes;
+        }
+
+        if(!inQuotes)
+            break;
+    }
+
+    return sawLine;
+}
+
+int findColumn(
+    const vector<string>& headers,
+    const string& expectedKey)
+{
+    for(size_t i = 0; i < headers.size(); ++i)
+    {
+        if(normalizeHeaderKey(headers[i]) == expectedKey)
+            return static_cast<int>(i);
+    }
+
+    return -1;
+}
+
+double clampRange(
+    double value,
+    double minValue,
+    double maxValue)
+{
+    return max(minValue, min(maxValue, value));
+}
+
 void normalizeWeights(Config& config)
 {
     if(config.buyWeight < 0.0)
@@ -134,19 +237,25 @@ void normalizeWeights(Config& config)
     if(config.intrinsicWeight < 0.0)
         config.intrinsicWeight = 0.0;
 
+    if(config.analystWeight < 0.0)
+        config.analystWeight = 0.0;
+
     const double totalWeight =
         config.buyWeight +
-        config.intrinsicWeight;
+        config.intrinsicWeight +
+        config.analystWeight;
 
     if(totalWeight <= 0.0)
     {
-        config.buyWeight = 0.85;
-        config.intrinsicWeight = 0.15;
+        config.buyWeight = 0.55;
+        config.intrinsicWeight = 0.20;
+        config.analystWeight = 0.25;
         return;
     }
 
     config.buyWeight /= totalWeight;
     config.intrinsicWeight /= totalWeight;
+    config.analystWeight /= totalWeight;
 }
 
 
@@ -226,6 +335,9 @@ void loadPaths(
 
         else if(cols[0] == "OutputFile")
             config.outputFile = cols[1];
+
+        else if(cols[0] == "AnalystFile")
+            config.analystFile = cols[1];
     }
 }
 
@@ -270,12 +382,19 @@ void loadWeights(
         double value = toDouble(cols[1]);
 
 
-        if(cols[0] == "BuyOpportunityWeight")
+        if(cols[0] == "BuyScoreWeight" ||
+           cols[0] == "BuyOpportunityWeight")
             config.buyWeight = value;
 
 
-        else if(cols[0] == "IntrinsicWeight")
+        else if(cols[0] == "IntrinsicScoreWeight" ||
+                cols[0] == "IntrinsicWeight")
             config.intrinsicWeight = value;
+
+
+        else if(cols[0] == "AnalystScoreWeight" ||
+                cols[0] == "AnalystWeight")
+            config.analystWeight = value;
 
 
         else if(cols[0] == "ConsensusBonusMax")
@@ -285,6 +404,288 @@ void loadWeights(
         else if(cols[0] == "ConsensusPenaltyPerDifference")
             config.consensusPenalty = value;
     }
+}
+
+string resolveAnalystFile(const Config& config)
+{
+    namespace fs = std::filesystem;
+
+    const string configured = trim(config.analystFile);
+
+    if(!configured.empty() &&
+       configured != "auto" &&
+       configured != "AUTO")
+    {
+        if(fs::exists(configured))
+            return configured;
+
+        cerr << "WARNING: Analyst file not found: "
+             << configured
+             << endl;
+    }
+
+    const fs::path downloadsDir("/home/ts/Downloads");
+
+    if(!fs::exists(downloadsDir))
+        return "";
+
+    fs::file_time_type newestTime;
+    fs::path newestFile;
+    bool hasAny = false;
+
+    for(const auto& entry : fs::directory_iterator(downloadsDir))
+    {
+        if(!entry.is_regular_file())
+            continue;
+
+        const fs::path p = entry.path();
+        const string filename = p.filename().string();
+
+        if(filename.rfind("Results", 0) != 0)
+            continue;
+
+        if(p.extension() != ".csv")
+            continue;
+
+        const auto time = fs::last_write_time(p);
+
+        if(!hasAny || time > newestTime)
+        {
+            newestTime = time;
+            newestFile = p;
+            hasAny = true;
+        }
+    }
+
+    if(!hasAny)
+        return "";
+
+    return newestFile.string();
+}
+
+double scoreMarketEdge(const string& rating)
+{
+    const string key = toUpper(trim(rating));
+
+    if(key.empty())
+        return 0.0;
+
+    if(key.find("LONG") != string::npos)
+        return 30.0;
+
+    if(key.find("NEUTRAL") != string::npos)
+        return 16.0;
+
+    if(key.find("AVOID") != string::npos)
+        return 4.0;
+
+    if(key.find("CAUTION") != string::npos)
+        return 8.0;
+
+    return 0.0;
+}
+
+double scoreSchwab(const string& rating)
+{
+    const string key = toUpper(trim(rating));
+
+    if(key.empty())
+        return 0.0;
+
+    if(key == "A+") return 30.0;
+    if(key == "A") return 29.0;
+    if(key == "A-") return 27.0;
+
+    if(key == "B+") return 25.0;
+    if(key == "B") return 23.0;
+    if(key == "B-") return 21.0;
+
+    if(key == "C+") return 19.0;
+    if(key == "C") return 17.0;
+    if(key == "C-") return 15.0;
+
+    if(key == "D+") return 12.0;
+    if(key == "D") return 9.0;
+    if(key == "D-") return 6.0;
+
+    if(key == "F") return 2.0;
+
+    return 0.0;
+}
+
+double scoreMorningstarStars(const string& rating)
+{
+    const string key = trim(rating);
+
+    if(key.empty())
+        return 0.0;
+
+    if(!key.empty() && isdigit(static_cast<unsigned char>(key[0])))
+    {
+        const int stars = key[0] - '0';
+
+        switch(stars)
+        {
+            case 5: return 20.0;
+            case 4: return 16.0;
+            case 3: return 12.0;
+            case 2: return 6.0;
+            case 1: return 2.0;
+            default: break;
+        }
+    }
+
+    return 0.0;
+}
+
+double scoreMoat(const string& rating)
+{
+    const string key = toUpper(trim(rating));
+
+    if(key.empty())
+        return 0.0;
+
+    if(key.find("WIDE") != string::npos)
+        return 20.0;
+
+    if(key.find("NARROW") != string::npos)
+        return 12.0;
+
+    if(key.find("NONE") != string::npos)
+        return 4.0;
+
+    return 0.0;
+}
+
+void loadAnalystRatings(
+    const Config& config,
+    unordered_map<string, Stock>& stocks)
+{
+    for(auto& item : stocks)
+    {
+        Stock& s = item.second;
+        s.analystScore = 0.0;
+        s.marketEdgePoints = 0.0;
+        s.schwabPoints = 0.0;
+        s.morningstarStarsPoints = 0.0;
+        s.moatPoints = 0.0;
+
+        s.marketEdgeRating = "N/A";
+        s.schwabRating = "N/A";
+        s.morningstarRating = "N/A";
+        s.moatRating = "N/A";
+    }
+
+    const string analystFile = resolveAnalystFile(config);
+
+    if(analystFile.empty())
+    {
+        cout << "       Analyst rating file not found. "
+             << "Using lowest analyst score = 0." << endl;
+        return;
+    }
+
+    ifstream file(analystFile);
+
+    if(!file)
+    {
+        cout << "       Unable to open analyst rating file. "
+             << "Using lowest analyst score = 0." << endl;
+        return;
+    }
+
+    string headerRecord;
+
+    if(!readCSVRecord(file, headerRecord))
+    {
+        cout << "       Analyst rating file is empty. "
+             << "Using lowest analyst score = 0." << endl;
+        return;
+    }
+
+    const auto headers = splitCSV(headerRecord);
+
+    const int symbolCol = findColumn(headers, "symbol");
+    const int schwabCol = findColumn(headers, "schwabequityrating");
+    const int starsCol = findColumn(headers, "morningstarrating");
+    const int moatCol = findColumn(headers, "morningstareconomicmoat");
+
+    int edgeCol = findColumn(headers, "marketedgesecondopinionweekly");
+
+    if(edgeCol < 0)
+        edgeCol = findColumn(headers, "marketedgesecondopinion");
+
+    if(symbolCol < 0 ||
+       schwabCol < 0 ||
+       starsCol < 0 ||
+       moatCol < 0 ||
+       edgeCol < 0)
+    {
+        cout << "       Analyst file columns not recognized. "
+             << "Using lowest analyst score = 0." << endl;
+        return;
+    }
+
+    int loadedCount = 0;
+    string record;
+
+    while(readCSVRecord(file, record))
+    {
+        if(trim(record).empty())
+            continue;
+
+        const auto cols = splitCSV(record);
+
+        const size_t minCols = static_cast<size_t>(
+            max({symbolCol, schwabCol, starsCol, moatCol, edgeCol}) + 1);
+
+        if(cols.size() < minCols)
+            continue;
+
+        const string ticker = toUpper(trim(cols[symbolCol]));
+
+        auto it = stocks.find(ticker);
+
+        if(it == stocks.end())
+            continue;
+
+        Stock& s = it->second;
+
+        s.schwabRating = trim(cols[schwabCol]);
+        s.morningstarRating = trim(cols[starsCol]);
+        s.moatRating = trim(cols[moatCol]);
+        s.marketEdgeRating = trim(cols[edgeCol]);
+
+        s.marketEdgePoints =
+            scoreMarketEdge(s.marketEdgeRating);
+
+        s.schwabPoints =
+            scoreSchwab(s.schwabRating);
+
+        s.morningstarStarsPoints =
+            scoreMorningstarStars(s.morningstarRating);
+
+        s.moatPoints =
+            scoreMoat(s.moatRating);
+
+        s.analystScore =
+            s.marketEdgePoints +
+            s.schwabPoints +
+            s.morningstarStarsPoints +
+            s.moatPoints;
+
+        s.analystScore = clampRange(s.analystScore, 0.0, 100.0);
+        ++loadedCount;
+    }
+
+    cout << "       Loaded analyst ratings from: "
+         << analystFile
+         << endl;
+
+    cout << "       Analyst ratings matched: "
+         << loadedCount
+         << " tickers"
+         << endl;
 }
 
 // ============================================================
@@ -717,7 +1118,8 @@ void calculateScores(
 
             +
 
-            s.consensusBonus;
+            (s.analystScore *
+             config.analystWeight);
 
 
 
@@ -781,6 +1183,15 @@ void writeReport(
     << "CombinedScore,"
     << "BuyScore,"
     << "IntrinsicScore,"
+    << "AnalystScore,"
+    << "MarketEdgePoints,"
+    << "SchwabPoints,"
+    << "MorningstarStarsPoints,"
+    << "MoatPoints,"
+    << "MarketEdgeRating,"
+    << "SchwabRating,"
+    << "MorningstarRating,"
+    << "MorningstarMoat,"
     << "ConsensusBonus,"
     << "Price,"
     << "IntrinsicValue,"
@@ -826,6 +1237,15 @@ void writeReport(
         << s.combinedScore << ","
         << s.buyScore << ","
         << s.intrinsicScore << ","
+        << s.analystScore << ","
+        << s.marketEdgePoints << ","
+        << s.schwabPoints << ","
+        << s.morningstarStarsPoints << ","
+        << s.moatPoints << ","
+        << "\"" << s.marketEdgeRating << "\"" << ","
+        << "\"" << s.schwabRating << "\"" << ","
+        << "\"" << s.morningstarRating << "\"" << ","
+        << "\"" << s.moatRating << "\"" << ","
         << s.consensusBonus << ","
 
         << s.price << ","
@@ -918,6 +1338,10 @@ int main()
          << config.intrinsicWeight
          << endl;
 
+        cout << "          Analyst Weight:   "
+            << config.analystWeight
+            << endl;
+
     cout << "          Consensus Bonus:  "
          << config.consensusMax
          << endl;
@@ -967,6 +1391,19 @@ int main()
     << stocks.size()
     << " stocks"
     << endl;
+
+
+    // --------------------------------------------------------
+    // Load Analyst Ratings
+    // --------------------------------------------------------
+
+    cout
+    << "       Loading Analyst Ratings file..."
+    << endl;
+
+    loadAnalystRatings(
+        config,
+        stocks);
 
 
 
