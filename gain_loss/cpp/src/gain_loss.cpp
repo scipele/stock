@@ -4,6 +4,7 @@ g++ -std=c++17 -O2 gain_loss.cpp -o ../bin/gain_loss
 */
 
 #include <algorithm>
+#include <deque>
 #include <cctype>
 #include <chrono>
 #include <cmath>
@@ -297,6 +298,16 @@ struct Transaction
     size_t original_order = 0;
 };
 
+bool is_positive_journaled_share_transfer(const Transaction& tx)
+{
+    return tx.action == "JOURNALED SHARES" && tx.quantity > EPSILON;
+}
+
+bool is_negative_journaled_share_transfer(const Transaction& tx)
+{
+    return tx.action == "JOURNALED SHARES" && tx.quantity < -EPSILON;
+}
+
 std::vector<Position> read_positions(const fs::path& filename)
 {
     std::vector<Position> positions;
@@ -436,7 +447,11 @@ std::vector<Transaction> read_transactions(const fs::path& filename)
         t.action = remove_quotes(fields[action_col]);
         std::transform(t.action.begin(), t.action.end(), t.action.begin(), [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
         t.symbol = remove_quotes(fields[symbol_col]);
-        t.quantity = std::fabs(to_double(fields[qty_col]));
+        double raw_quantity = to_double(fields[qty_col]);
+        if (t.action == "BUY" || t.action == "SELL")
+            t.quantity = std::fabs(raw_quantity);
+        else
+            t.quantity = raw_quantity;
 
         if (price_col >= 0 && price_col < static_cast<int>(fields.size()))
             t.price = std::fabs(to_double(fields[price_col]));
@@ -446,7 +461,7 @@ std::vector<Transaction> read_transactions(const fs::path& filename)
 
         t.original_order = order++;
 
-        if (!t.date.valid() || t.symbol.empty() || t.quantity < EPSILON)
+        if (!t.date.valid() || t.symbol.empty() || std::fabs(t.quantity) < EPSILON)
             continue;
 
         transactions.push_back(t);
@@ -475,6 +490,7 @@ std::map<std::string, std::map<std::string, DailySymbolSummary>> compute_daily_g
     const Date& end)
 {
     std::map<std::string, std::vector<BuyLot>> lots_by_symbol;
+    std::map<std::string, std::deque<BuyLot>> pending_transfers_by_symbol;
     std::map<std::string, std::map<std::string, DailySymbolSummary>> daily_results;
 
     std::vector<Transaction> sorted = transactions;
@@ -493,8 +509,12 @@ std::map<std::string, std::map<std::string, DailySymbolSummary>> compute_daily_g
             {
                 if (tx.action == "BUY")
                     return 0;
-                if (tx.action == "SELL")
+                if (is_negative_journaled_share_transfer(tx))
                     return 1;
+                if (is_positive_journaled_share_transfer(tx))
+                    return 2;
+                if (tx.action == "SELL")
+                    return 3;
                 return 2;
             };
 
@@ -511,16 +531,47 @@ std::map<std::string, std::map<std::string, DailySymbolSummary>> compute_daily_g
 
         std::string lot_key = tx.account_id.empty() ? tx.symbol : tx.account_id + "|" + tx.symbol;
 
-        if (tx.action == "BUY")
+        if (tx.action == "BUY" || is_positive_journaled_share_transfer(tx))
         {
-            lots_by_symbol[lot_key].push_back({tx.date, tx.quantity, tx.price});
+            if (is_positive_journaled_share_transfer(tx))
+            {
+                auto& pending = pending_transfers_by_symbol[tx.symbol];
+                double remaining = tx.quantity;
+
+                while (remaining > EPSILON && !pending.empty())
+                {
+                    auto transfer_lot = pending.front();
+                    pending.pop_front();
+
+                    double matched = std::min(remaining, transfer_lot.quantity);
+                    lots_by_symbol[lot_key].push_back({transfer_lot.date, matched, transfer_lot.price});
+
+                    if (transfer_lot.quantity > matched + EPSILON)
+                    {
+                        transfer_lot.quantity -= matched;
+                        pending.push_front(transfer_lot);
+                    }
+
+                    remaining -= matched;
+                }
+
+                if (remaining > EPSILON)
+                {
+                    lots_by_symbol[lot_key].push_back({tx.date, remaining, tx.price});
+                }
+            }
+            else
+            {
+                lots_by_symbol[lot_key].push_back({tx.date, tx.quantity, tx.price});
+            }
+
             continue;
         }
 
-        if (tx.action != "SELL")
+        if (tx.action != "SELL" && !is_negative_journaled_share_transfer(tx))
             continue;
 
-        double remaining = tx.quantity;
+        double remaining = std::fabs(tx.quantity);
         auto& lots = lots_by_symbol[lot_key];
         size_t idx = 0;
 
@@ -534,7 +585,14 @@ std::map<std::string, std::map<std::string, DailySymbolSummary>> compute_daily_g
             }
 
             double matched = std::min(remaining, lot.quantity);
-            if (date_greater_than_or_equal(tx.date, start) && date_less_than_or_equal(tx.date, end))
+            bool is_transfer_out = is_negative_journaled_share_transfer(tx);
+
+            if (is_transfer_out)
+            {
+                pending_transfers_by_symbol[tx.symbol].push_back({lot.date, matched, lot.price});
+            }
+
+            if (!is_transfer_out && date_greater_than_or_equal(tx.date, start) && date_less_than_or_equal(tx.date, end))
             {
                 int held_days = days_between(lot.date, tx.date);
                 std::string day_key = date_to_string(tx.date);

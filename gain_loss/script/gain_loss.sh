@@ -75,9 +75,9 @@ fi
 cp "$POSITIONS_SOURCE" "$OUTPUT_DIR/positions.csv"
 echo "Using positions file: $(basename "$POSITIONS_SOURCE")"
 
-# ---------- Transactions: pick best history file per account, then merge + sort ----------
+# ---------- Transactions: pick latest history file per account, then merge + sort ----------
 # Group by masked account key (e.g. XXX456). If multiple exports exist for the same
-# account, keep the file with the most transaction rows (tie-breaker: newest timestamp).
+# account, keep the newest export timestamp so later Schwab snapshots win.
 declare -A BEST_TXN     # account_key -> full path of chosen file
 declare -A BEST_ROWS    # account_key -> row count in chosen file
 declare -A BEST_TS      # account_key -> timestamp from filename
@@ -106,10 +106,9 @@ while IFS= read -r -d '' file; do
         data_start=$((header_line + 1))
         row_count=$(tail -n +"$data_start" "$file" | grep -v -E '^(,"?Transactions Total|"?Transactions Total)' | wc -l)
 
-        existing_rows="${BEST_ROWS[$key]:--1}"
         existing_ts="${BEST_TS[$key]:-}"
 
-        if (( row_count > existing_rows )) || { (( row_count == existing_rows )) && [[ "$ts" > "$existing_ts" ]]; }; then
+        if [[ -z "$existing_ts" || "$ts" > "$existing_ts" ]]; then
             BEST_TXN[$key]="$file"
             BEST_ROWS[$key]="$row_count"
             BEST_TS[$key]="$ts"
