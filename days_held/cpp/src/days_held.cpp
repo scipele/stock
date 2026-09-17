@@ -235,6 +235,16 @@ bool contains(const std::string& value, const std::string& search)
     return value.find(search) != std::string::npos;
 }
 
+fs::path find_merged_file(const std::string& filename)
+{
+    fs::path candidate = fs::path(OUTPUT_DIR) / filename;
+
+    if (fs::exists(candidate) && fs::is_regular_file(candidate))
+        return candidate;
+
+    return {};
+}
+
 fs::path find_newest_positions_file()
 {
     fs::path newest;
@@ -248,7 +258,8 @@ fs::path find_newest_positions_file()
 
         std::string name = entry.path().filename().string();
 
-        if (!contains(name, "Fund-Positions-"))
+        if (!contains(name, "Positions") ||
+            contains(name, "Transactions"))
             continue;
 
         if (entry.path().extension() != ".csv")
@@ -964,10 +975,16 @@ int main()
     // --------------------------------------------------------
 
     fs::path positions_file =
-        find_newest_positions_file();
+        find_merged_file("positions.csv");
+
+    if (positions_file.empty())
+        positions_file = find_newest_positions_file();
 
     fs::path transactions_file =
-        find_newest_transactions_file();
+        find_merged_file("transactions.csv");
+
+    if (transactions_file.empty())
+        transactions_file = find_newest_transactions_file();
 
     if (positions_file.empty())
     {

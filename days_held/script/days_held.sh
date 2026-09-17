@@ -85,59 +85,61 @@ mkdir -p "$OUTPUT_DIR"
 
 
 # ------------------------------------------------------------
-# Find latest Schwab Positions export
+# Find all Schwab Positions exports from every account.
 #
-# Schwab filenames look like:
+# Schwab account exports are named like:
 #
-# Fund-Positions-2026-08-26-132828.csv
+#   Indiv_Tony-Positions-2026-09-16-231602.csv
+#   Roth_Mary-Positions-2026-09-16-231629.csv
+#
+# We intentionally match any file ending in "-Positions-*.csv"
+# so the script can merge all account holdings together.
 # ------------------------------------------------------------
 
-POSITIONS_SOURCE=$(
+mapfile -t POSITIONS_SOURCES < <(
     find "$DOWNLOAD_DIR" \
         -maxdepth 1 \
         -type f \
-        -name 'Fund-Positions-*.csv' \
+        -name '*-Positions-*.csv' \
         -printf '%T@ %p\n' |
     sort -nr |
-    head -n 1 |
     cut -d' ' -f2-
 )
 
 
-if [ -z "$POSITIONS_SOURCE" ]; then
-    echo "ERROR: No Schwab Positions file found."
+if [ "${#POSITIONS_SOURCES[@]}" -eq 0 ]; then
+    echo "ERROR: No Schwab Positions files found."
     echo
     echo "Looking for:"
-    echo "  $DOWNLOAD_DIR/Fund-Positions-*.csv"
+    echo "  $DOWNLOAD_DIR/*-Positions-*.csv"
     exit 1
 fi
 
 
 # ------------------------------------------------------------
-# Find latest Schwab Transaction History export
+# Find all Schwab Transaction History exports.
 #
 # Schwab filenames look like:
 #
-# Fund_XXX456_Transactions_20260826-132818.csv
+#   Fund_XXX456_Transactions_20260826-132818.csv
 #
 # We intentionally use *Transactions*.csv so the account
 # number does not need to be hard-coded.
 # ------------------------------------------------------------
 
-TRANSACTIONS_SOURCE=$(
+mapfile -t TRANSACTIONS_SOURCES < <(
     find "$DOWNLOAD_DIR" \
         -maxdepth 1 \
         -type f \
         -name '*Transactions*.csv' \
         -printf '%T@ %p\n' |
     sort -nr |
-    head -n 1 |
     cut -d' ' -f2-
 )
 
 
-if [ -z "$TRANSACTIONS_SOURCE" ]; then
-    echo "ERROR: No Schwab Transaction History file found."
+if [ "${#TRANSACTIONS_SOURCES[@]}" -eq 0 ]; then
+    echo "ERROR: No Schwab Transaction History files found."
     echo
     echo "Looking for:"
     echo "  $DOWNLOAD_DIR/*Transactions*.csv"
@@ -151,28 +153,164 @@ fi
 
 echo "Schwab files found:"
 echo
-echo "  Positions:"
-echo "    $POSITIONS_SOURCE"
+echo "  Positions files:"
+for file in "${POSITIONS_SOURCES[@]}"; do
+    echo "    $file"
+done
 echo
-echo "  Transactions:"
-echo "    $TRANSACTIONS_SOURCE"
+echo "  Transactions files:"
+for file in "${TRANSACTIONS_SOURCES[@]}"; do
+    echo "    $file"
+done
 echo
 
 
 # ------------------------------------------------------------
-# Copy source files into output directory
+# Merge all positions files into a single CSV that the C++ code
+# expects. This keeps only Equity rows and combines duplicate
+# symbols across accounts into a single total quantity.
 # ------------------------------------------------------------
 
-echo "Copying Schwab files..."
+echo "Merging positions files..."
 echo
 
-cp "$POSITIONS_SOURCE" "$POSITIONS_FILE"
+"$PYTHON" - "$POSITIONS_FILE" "${POSITIONS_SOURCES[@]}" <<'PY'
+import csv
+import sys
+from pathlib import Path
 
-cp "$TRANSACTIONS_SOURCE" "$TRANSACTIONS_FILE"
+output_path = Path(sys.argv[1])
+source_files = [Path(p) for p in sys.argv[2:]]
+
+merged = {}
+
+
+def parse_number(value):
+    if value is None:
+        return 0.0
+
+    text = str(value).strip().strip('"')
+    if text in ("", "--", "N/A"):
+        return 0.0
+
+    text = text.replace('$', '').replace(',', '').replace('%', '').strip()
+    if text in ("", "--", "N/A"):
+        return 0.0
+
+    try:
+        return float(text)
+    except ValueError:
+        return 0.0
+
+
+for source_file in source_files:
+    with source_file.open("r", newline="") as infile:
+        rows = list(csv.reader(infile))
+
+    header = None
+    header_index = None
+    for i, row in enumerate(rows):
+        if not row or all(cell.strip() == "" for cell in row):
+            continue
+        cleaned = [cell.strip().strip('"') for cell in row]
+        if any(cell == "Symbol" for cell in cleaned):
+            header = cleaned
+            header_index = i
+            break
+
+    if header is None:
+        continue
+
+    lookup = {name: idx for idx, name in enumerate(header)}
+    for row in rows[header_index + 1:]:
+        if not row or all(cell.strip() == "" for cell in row):
+            continue
+        if len(row) <= max(lookup.values()):
+            continue
+
+        symbol = row[lookup["Symbol"]].strip().strip('"')
+        if not symbol:
+            continue
+        if symbol in {"Positions Total", "Cash & Cash Investments"}:
+            continue
+
+        if "Asset Type" in lookup:
+            asset_type = row[lookup["Asset Type"]].strip().strip('"')
+        else:
+            asset_type = ""
+
+        if asset_type != "Equity":
+            continue
+
+        qty = parse_number(row[lookup["Qty (Quantity)"]]) if "Qty (Quantity)" in lookup else 0.0
+        description = row[lookup["Description"]].strip().strip('"') if "Description" in lookup else ""
+
+        if qty == 0:
+            continue
+
+        entry = merged.setdefault(symbol, {"Description": description, "Qty": 0.0})
+        entry["Qty"] += qty
+        if not entry["Description"] and description:
+            entry["Description"] = description
+
+with output_path.open("w", newline="") as outfile:
+    writer = csv.writer(outfile)
+    writer.writerow(["Symbol", "Description", "Qty (Quantity)", "Asset Type"])
+    for symbol, data in sorted(merged.items()):
+        writer.writerow([symbol, data["Description"], data["Qty"], "Equity"])
+PY
 
 
 echo "  Created:"
 echo "    $POSITIONS_FILE"
+echo
+
+
+# ------------------------------------------------------------
+# Merge all transaction files into a single CSV.
+# ------------------------------------------------------------
+
+echo "Merging transaction files..."
+echo
+
+"$PYTHON" - "$TRANSACTIONS_FILE" "${TRANSACTIONS_SOURCES[@]}" <<'PY'
+import csv
+import sys
+from pathlib import Path
+
+output_path = Path(sys.argv[1])
+source_files = [Path(p) for p in sys.argv[2:]]
+
+header_written = False
+header = None
+
+with output_path.open("w", newline="") as outfile:
+    writer = csv.writer(outfile)
+
+    for source_file in source_files:
+        with source_file.open("r", newline="") as infile:
+            rows = list(csv.reader(infile))
+
+        for row in rows:
+            if not row or all(cell.strip() == "" for cell in row):
+                continue
+
+            cleaned = [cell.strip().strip('"') for cell in row]
+            if any(cell == "Date" for cell in cleaned):
+                if not header_written:
+                    writer.writerow(cleaned)
+                    header_written = True
+                    header = cleaned
+                continue
+
+            if header is None:
+                continue
+
+            writer.writerow(row)
+PY
+
+
+echo "  Created:"
 echo "    $TRANSACTIONS_FILE"
 echo
 
