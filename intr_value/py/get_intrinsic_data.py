@@ -19,7 +19,7 @@ OUTPUT_FILE = "../data/fundamentals_intrinsic.csv"
 BUY_OPP_INDEX_DIR = "../../buy_opp/data"
 
 MAX_HISTORY_YEARS = 5
-MAX_WORKERS = 8          # adjust 6–12 depending on your connection
+MAX_WORKERS = 1          # adjust 6–12 depending on your connection
 # ------------------------------------------------------------------
 
 INDEX_BIT_MAP = {
