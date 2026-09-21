@@ -7,7 +7,8 @@ CHART_DIR="/home/dev/stock/intraday_charting/charts"
 DOWNLOAD_DIR="$HOME/Downloads"
 TOP_BUY_OPP_RANK_FILE="/home/dev/stock/buy_opp/output/summary_all.csv"
 TOP_INTR_BUY_RANK_FILE="/home/dev/stock/intr_buy/output/combined_report.csv"
-TOP_OVERALL_WEIGHTED_FILE="/home/dev/stock/buy_opp/output/summary_all.csv"
+TOP_OVERALL_WEIGHTED_FILE="/home/dev/stock/intr_buy/output/combined_report.csv"
+
 
 # Words to exclude from position descriptions (case-insensitive)
 EXCLUDE_LINES_WHERE_NAME_CONTAINS="etf|fund|money|adm"
@@ -79,7 +80,7 @@ load_top_overall_weighted() {
         return 1
     fi
     # Column 3 = ticker, skip header, take first $num rows
-    awk -F ',' 'NR>1 {print $3}' "$TOP_OVERALL_WEIGHTED_FILE" | head -n "$num"
+    awk -F ',' 'NR>1 {print $2}' "$TOP_OVERALL_WEIGHTED_FILE" | head -n "$num"
 }
 
 
