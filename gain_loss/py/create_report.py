@@ -18,7 +18,7 @@ BASE_DIR = Path("/home/dev/stock/gain_loss")
 OUTPUT_DIR = BASE_DIR / "output"
 INPUT_FILE = OUTPUT_DIR / "gain_loss.csv"
 TRANSACTIONS_FILE = OUTPUT_DIR / "transactions.csv"
-OUTPUT_FILE = OUTPUT_DIR / "days_held.html"
+OUTPUT_FILE = OUTPUT_DIR / "gain_loss.html"
 
 
 def esc(value):
@@ -1066,4 +1066,4 @@ print("HTML report created:")
 print(OUTPUT_FILE)
 print()
 
-webbrowser.open(OUTPUT_FILE.resolve().as_uri())
+# webbrowser.open(OUTPUT_FILE.resolve().as_uri())
