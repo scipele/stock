@@ -8,7 +8,7 @@ CPP_PROGRAM="$BASE_DIR/cpp/bin/gain_loss"
 PYTHON="/home/dev/py/.venv/bin/python"
 PYTHON_SCRIPT="$BASE_DIR/py/create_report.py"
 OUTPUT_DIR="$BASE_DIR/output"
-REPORT_FILE="$OUTPUT_DIR/days_held.html"
+REPORT_FILE="$OUTPUT_DIR/gain_loss.html"
 DOWNLOAD_DIR="/home/ts/Downloads"
 DEFAULT_START_DATE="07/09/2026"
 
@@ -219,22 +219,13 @@ if [ ! -f "$REPORT_FILE" ]; then
 fi
 
 open_report() {
-    if command -v gio >/dev/null 2>&1; then
-        gio open "$REPORT_FILE" >/dev/null 2>&1 && return 0
-    fi
-
-    if command -v xdg-open >/dev/null 2>&1; then
-        xdg-open "$REPORT_FILE" >/dev/null 2>&1 && return 0
-    fi
-
-    if command -v code >/dev/null 2>&1; then
-        code "$REPORT_FILE" >/dev/null 2>&1 && return 0
-    fi
-
-    return 1
+    xdg-open "$REPORT_FILE" >/dev/null 2>&1
 }
 
 open_report || echo "WARNING: Could not open report automatically."
 
 echo "Completed successfully."
 echo "Report: $REPORT_FILE"
+
+echo
+read -p "Press Enter to close..."
