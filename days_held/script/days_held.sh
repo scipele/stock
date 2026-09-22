@@ -85,33 +85,32 @@ mkdir -p "$OUTPUT_DIR"
 
 
 # ------------------------------------------------------------
-# Find all Schwab Positions exports from every account.
+# Find latest Schwab All-Accounts Positions export.
 #
-# Schwab account exports are named like:
+# Only files using the new All-Accounts format are accepted.
 #
-#   Indiv_Tony-Positions-2026-09-16-231602.csv
-#   Roth_Mary-Positions-2026-09-16-231629.csv
+# Example:
 #
-# We intentionally match any file ending in "-Positions-*.csv"
-# so the script can merge all account holdings together.
+#   All-Accounts-Positions-2026-09-22-094300.csv
 # ------------------------------------------------------------
 
-mapfile -t POSITIONS_SOURCES < <(
+POSITIONS_SOURCE=$(
     find "$DOWNLOAD_DIR" \
         -maxdepth 1 \
         -type f \
-        -name '*-Positions-*.csv' \
+        -name 'All-Accounts-Positions-*.csv' \
         -printf '%T@ %p\n' |
     sort -nr |
+    head -n 1 |
     cut -d' ' -f2-
 )
 
 
-if [ "${#POSITIONS_SOURCES[@]}" -eq 0 ]; then
-    echo "ERROR: No Schwab Positions files found."
+if [ -z "$POSITIONS_SOURCE" ]; then
+    echo "ERROR: No All-Accounts Schwab Positions file found."
     echo
     echo "Looking for:"
-    echo "  $DOWNLOAD_DIR/*-Positions-*.csv"
+    echo "  $DOWNLOAD_DIR/All-Accounts-Positions-*.csv"
     exit 1
 fi
 
@@ -153,10 +152,8 @@ fi
 
 echo "Schwab files found:"
 echo
-echo "  Positions files:"
-for file in "${POSITIONS_SOURCES[@]}"; do
-    echo "    $file"
-done
+echo "  Positions:"
+echo "    $POSITIONS_SOURCE"
 echo
 echo "  Transactions files:"
 for file in "${TRANSACTIONS_SOURCES[@]}"; do
@@ -166,103 +163,129 @@ echo
 
 
 # ------------------------------------------------------------
-# Merge all positions files into a single CSV that the C++ code
-# expects. This keeps only Equity rows and combines duplicate
-# symbols across accounts into a single total quantity.
+# Process All-Accounts Positions file.
+#
+# The All-Accounts export contains multiple account sections
+# in one CSV file.
+#
+# Each account section contains its own:
+#
+#   Symbol
+#   Description
+#   ...
+#   Qty (Quantity)
+#   ...
+#   Asset Type
+#
+# We:
+#
+#   1. Find every position header in the file
+#   2. Process all rows following each header
+#   3. Keep only Asset Type = Equity
+#   4. Ignore Cash and summary rows
+#   5. Combine duplicate symbols across all accounts
 # ------------------------------------------------------------
 
-echo "Merging positions files..."
-echo
+echo "Processing All-Accounts positions..."
 
-"$PYTHON" - "$POSITIONS_FILE" "${POSITIONS_SOURCES[@]}" <<'PY'
+"$PYTHON" - "$POSITIONS_FILE" "$POSITIONS_SOURCE" <<'PY'
 import csv
 import sys
 from pathlib import Path
 
 output_path = Path(sys.argv[1])
-source_files = [Path(p) for p in sys.argv[2:]]
+source_file = Path(sys.argv[2])
 
 merged = {}
 
-
 def parse_number(value):
-    if value is None:
-        return 0.0
-
     text = str(value).strip().strip('"')
+    text = text.replace(",", "").replace("$", "")
     if text in ("", "--", "N/A"):
         return 0.0
-
-    text = text.replace('$', '').replace(',', '').replace('%', '').strip()
-    if text in ("", "--", "N/A"):
-        return 0.0
-
     try:
         return float(text)
     except ValueError:
         return 0.0
 
+with source_file.open("r", newline="", encoding="utf-8-sig") as infile:
+    reader = csv.reader(infile)
 
-for source_file in source_files:
-    with source_file.open("r", newline="") as infile:
-        rows = list(csv.reader(infile))
+    lookup = None
 
-    header = None
-    header_index = None
-    for i, row in enumerate(rows):
-        if not row or all(cell.strip() == "" for cell in row):
+    for row in reader:
+        if not row:
             continue
+
         cleaned = [cell.strip().strip('"') for cell in row]
-        if any(cell == "Symbol" for cell in cleaned):
-            header = cleaned
-            header_index = i
-            break
 
-    if header is None:
-        continue
-
-    lookup = {name: idx for idx, name in enumerate(header)}
-    for row in rows[header_index + 1:]:
-        if not row or all(cell.strip() == "" for cell in row):
+        # Each account has its own header
+        if (
+            "Symbol" in cleaned
+            and "Qty (Quantity)" in cleaned
+            and "Asset Type" in cleaned
+        ):
+            lookup = {name: i for i, name in enumerate(cleaned)}
             continue
+
+        if lookup is None:
+            continue
+
         if len(row) <= max(lookup.values()):
             continue
 
         symbol = row[lookup["Symbol"]].strip().strip('"')
+
         if not symbol:
             continue
-        if symbol in {"Positions Total", "Cash & Cash Investments"}:
+
+        if symbol in ("Positions Total", "Cash & Cash Investments"):
             continue
 
-        if "Asset Type" in lookup:
-            asset_type = row[lookup["Asset Type"]].strip().strip('"')
-        else:
-            asset_type = ""
+        asset_type = row[lookup["Asset Type"]].strip().strip('"')
 
         if asset_type != "Equity":
             continue
 
-        qty = parse_number(row[lookup["Qty (Quantity)"]]) if "Qty (Quantity)" in lookup else 0.0
-        description = row[lookup["Description"]].strip().strip('"') if "Description" in lookup else ""
+        qty = parse_number(row[lookup["Qty (Quantity)"]])
 
         if qty == 0:
             continue
 
-        entry = merged.setdefault(symbol, {"Description": description, "Qty": 0.0})
-        entry["Qty"] += qty
-        if not entry["Description"] and description:
-            entry["Description"] = description
+        description = row[lookup["Description"]].strip().strip('"')
+
+        if symbol not in merged:
+            merged[symbol] = {
+                "Description": description,
+                "Qty": 0.0
+            }
+
+        merged[symbol]["Qty"] += qty
 
 with output_path.open("w", newline="") as outfile:
     writer = csv.writer(outfile)
-    writer.writerow(["Symbol", "Description", "Qty (Quantity)", "Asset Type"])
-    for symbol, data in sorted(merged.items()):
-        writer.writerow([symbol, data["Description"], data["Qty"], "Equity"])
+
+    writer.writerow([
+        "Symbol",
+        "Description",
+        "Qty (Quantity)",
+        "Asset Type"
+    ])
+
+    for symbol in sorted(merged):
+        writer.writerow([
+            symbol,
+            merged[symbol]["Description"],
+            merged[symbol]["Qty"],
+            "Equity"
+        ])
 PY
 
-
+echo
 echo "  Created:"
 echo "    $POSITIONS_FILE"
+echo
+head -5 "$POSITIONS_FILE"
 echo
 
 
@@ -368,7 +391,7 @@ echo
 echo "Opening report..."
 echo
 
-xdg-open "$REPORT_FILE" >/dev/null 2>&1 &
+gio open "$REPORT_FILE" >/dev/null 2>&1 &
 
 
 # ------------------------------------------------------------
@@ -382,3 +405,6 @@ echo
 echo "Report:"
 echo "  $REPORT_FILE"
 echo
+
+echo
+read -p "Press Enter to close..."

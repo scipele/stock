@@ -810,12 +810,3 @@ print()
 print("HTML report created:")
 print(OUTPUT_FILE)
 print()
-
-
-# ------------------------------------------------------------
-# Open default browser
-# ------------------------------------------------------------
-
-webbrowser.open(
-    OUTPUT_FILE.resolve().as_uri()
-)
