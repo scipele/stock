@@ -21,10 +21,6 @@ echo "1. Processing Schwab account..."
 $PYTHON "$PY_DIR/asset_alloc.py"
 
 echo
-echo "2. Processing John Hancock account..."
-$PYTHON "$PY_DIR/jh.py"
-
-echo
 echo "3. Combining portfolio Assets..."
 $PYTHON "$PY_DIR/portfolio.py"
 

@@ -13,7 +13,6 @@ OUTPUT_FILE = OUTPUT_DIR / "economic_exposure.csv"
 
 INPUT_FILES = [
     OUTPUT_DIR / "schwab_assets.csv",
-    OUTPUT_DIR / "jh_assets.csv",
     OUTPUT_DIR / "manual_assets.csv",
 ]
 

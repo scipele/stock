@@ -16,9 +16,7 @@ BASE_DIR = PY_DIR.parent
 INPUT_DIR = BASE_DIR / "input"
 OUTPUT_DIR = BASE_DIR / "output"
 
-
 ASSET_MAP_FILE = INPUT_DIR / "asset_map.csv"
-
 SCHWAB_OUTPUT = OUTPUT_DIR / "schwab_assets.csv"
 
 
