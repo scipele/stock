@@ -25,25 +25,15 @@ def percent(value):
     return f"{value:.1f}%"
 
 def add_totals(df, label_column):
-    """Appends a summary/total row to the dataframe."""
     df = df.copy()
-    
-    # Identify numeric columns
     numeric_cols = df.select_dtypes(include=['number']).columns
-    
-    # Create total row mapping
     total_row = {col: df[col].sum() for col in numeric_cols}
     
-    # Keep sum for value and standard percentages, clear out difference percentages
     for col in list(total_row.keys()):
-        # Explicitly keep sums for Current % and TargetPercent, skip others like Difference %
         if col not in ["Value", "Current %", "TargetPercent"]:
             total_row[col] = pd.NA
 
-    # Set label for the row (e.g., "Total")
     total_row[label_column] = "Total"
-    
-    # Append the total row to the dataframe
     return pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
 
 def format_dataframe(df):
@@ -56,11 +46,7 @@ def format_dataframe(df):
     return df
 
 def table(df):
-    return df.to_html(
-        index=False,
-        classes="table",
-        border=0
-    )
+    return df.to_html(index=False, classes="table", border=0)
 
 # --------------------------------------------------
 # Data Loading
@@ -72,122 +58,142 @@ def load_data():
     alloc_target = pd.read_csv(ALLOC_TARGET_FILE)
     retirement_target = pd.read_csv(RETIREMENT_TARGET_FILE)
     return (detail, retirement, exposure, alloc_target, retirement_target)
-
-
 # --------------------------------------------------
 # Apply Targets
 # --------------------------------------------------
 def apply_targets(detail, retirement, alloc_target, retirement_target):
-
-    # Detail report already contains targets
-    if "TargetPercent" not in detail.columns:
-        detail = detail.merge(
-            alloc_target,
-            on="Category",
-            how="left"
-        )
+    if "Category" in detail.columns and alloc_target is not None:
+        if "TargetPercent" in detail.columns:
+            detail = detail.drop(columns=["TargetPercent", "Reason", "Difference %"], errors="ignore")
+        detail = detail.merge(alloc_target, on="Category", how="left")
         detail["TargetPercent"] = detail["TargetPercent"].fillna(0)
+        detail["Reason"] = detail["Reason"].fillna("")
+        detail["Difference %"] = detail["Current %"] - detail["TargetPercent"]
 
-    detail["Difference %"] = (
-        detail["Current %"] -
-        detail["TargetPercent"]
-    )
-
-    # Retirement targets + reasons
-    retirement = retirement.merge(
-        retirement_target[
-            [
-                "RetirementBucket",
-                "TargetPercent",
-                "Reason"
-            ]
-        ],
-        on="RetirementBucket",
-        how="left"
-    )
-
-    retirement["TargetPercent"] = (
-        retirement["TargetPercent"]
-        .fillna(0)
-    )
-
-    retirement["Reason"] = (
-        retirement["Reason"]
-        .fillna("")
-    )
-
-    retirement["Difference %"] = (
-        retirement["Current %"]
-        - retirement["TargetPercent"]
-    )
-
-    retirement = retirement[
-        [
-            "RetirementBucket",
-            "Value",
-            "Current %",
-            "TargetPercent",
-            "Difference %",
-            "Reason"
-        ]
-    ]
+    if "RetirementBucket" in retirement.columns and retirement_target is not None:
+        if "TargetPercent" in retirement.columns:
+            retirement = retirement.drop(columns=["TargetPercent", "Reason", "Difference %"], errors="ignore")
+            
+        retirement = retirement.merge(retirement_target, on="RetirementBucket", how="left")
+        retirement["TargetPercent"] = retirement["TargetPercent"].fillna(0)
+        retirement["Reason"] = retirement["Reason"].fillna("")
+        retirement["Difference %"] = retirement["Current %"] - retirement["TargetPercent"]
+    else:
+        if "TargetPercent" not in retirement.columns:
+            retirement["TargetPercent"] = 0.0
+            retirement["Difference %"] = 0.0
+            retirement["Reason"] = ""
 
     return detail, retirement
 
 
 def format_exposure(exposure):
-    """
-    Converts economic exposure into dashboard standard columns.
-    """
-
     df = exposure.copy()
-
-    df = df.rename(
-        columns={
-            "AssetClass": "Category"
-        }
-    )
+    if "AssetClass" in df.columns:
+        df = df.rename(columns={"AssetClass": "Category"})
+    elif "Category" not in df.columns:
+        df["Category"] = "Unknown"
 
     total = df["Value"].sum()
+    df["Current %"] = (df["Value"] / total * 100)
 
-    df["Current %"] = (
-        df["Value"] / total * 100
-    )
+    if "TargetPercent" not in df.columns:
+        df["TargetPercent"] = pd.NA
+    if "Difference %" not in df.columns:
+        df["Difference %"] = pd.NA
+    if "Reason" not in df.columns:
+        df["Reason"] = ""
 
-    df["TargetPercent"] = pd.NA
-    df["Difference %"] = pd.NA
-    df["Reason"] = ""
-
-    return df[
-        [
-            "Category",
-            "Value",
-            "Current %",
-            "TargetPercent",
-            "Difference %",
-            "Reason"
-        ]
-    ]
+    return df[["Category", "Value", "Current %", "TargetPercent", "Difference %", "Reason"]]
 
 # --------------------------------------------------
-# HTML
+# HTML Generator
 # --------------------------------------------------
 def build_html(detail, retirement, exposure):
-    total = retirement["Value"].sum()
+    total = retirement[retirement["RetirementBucket"] != "Total"]["Value"].sum()
     
-    # Add subtotals to tables before formatting them into HTML strings
+    # Filter pre-existing totals before processing fresh metrics
+    retirement = retirement[retirement["RetirementBucket"] != "Total"]
+    detail = detail[detail["Category"] != "Total"]
+    exposure = exposure[exposure["Category"] != "Total"]
+
     retirement_with_totals = add_totals(retirement, "RetirementBucket")
     detail_with_totals = add_totals(detail, "Category")
-    
-    # Look through exposure fallback logic
-    lt_label = exposure.columns[0] if len(exposure.columns) > 0 else ""
- 
-    exposure = format_exposure(exposure)
 
-    exposure_with_totals = add_totals(
-        exposure,
-        "Category"
-)
+    # Isolate Core Risk Investments vs Cash Buffer
+    core_exposure = exposure[exposure["Category"].isin(["Total Stocks", "Bonds"])].copy()
+    cash_exposure = exposure[exposure["Category"] == "Cash"].copy()
+
+    # CRITICAL MATH MOVE: Re-calculate percents based strictly on Core Subtotal
+    core_val_subtotal = core_exposure["Value"].sum()
+    
+    # Recalculate Current % relative to Core Subtotal
+    core_exposure["Current %"] = (core_exposure["Value"] / core_val_subtotal) * 100
+    
+    # Recalculate TargetPercent relative to Core Target (80% Stocks / 13% Bonds = 93% Total Core)
+    core_exposure["TargetPercent"] = (core_exposure["Category"].map({"Total Stocks": 80.0, "Bonds": 13.0}) / 93.0) * 100
+    core_exposure["Difference %"] = core_exposure["Current %"] - core_exposure["TargetPercent"]
+
+    # Core subtotal variables for the summary row
+    core_current_sum = core_exposure["Current %"].sum()
+    core_target_sum = core_exposure["TargetPercent"].sum()
+    core_diff_sum = core_current_sum - core_target_sum
+
+    # Format data blocks into structured HTML strings
+    core_formatted = format_dataframe(core_exposure)
+    cash_formatted = format_dataframe(cash_exposure)
+
+    exposure_html = f"""
+    <table class="table" border="0">
+        <thead>
+            <tr>
+                <th>Category</th>
+                <th>Value</th>
+                <th>Current % (of Core)</th>
+                <th>TargetPercent</th>
+                <th>Difference %</th>
+                <th style="text-align: left;">Reason</th>
+            </tr>
+        </thead>
+        <tbody>
+    """
+    
+    # 1. Inject Core Risk Rows (showing purely risk-adjusted percentages)
+    for _, row in core_formatted.iterrows():
+        exposure_html += f"<tr><td>{row['Category']}</td><td>{row['Value']}</td><td>{row['Current %']}</td><td>{row['TargetPercent']}</td><td>{row['Difference %']}</td><td style='text-align: left;'>{row['Reason']}</td></tr>"
+    
+    # 2. Inject Sub-Total Line Row (sums neatly to 100.0% of your risk assets)
+    exposure_html += f"""
+        <tr class="subtotal-row">
+            <td>Core Subtotal</td>
+            <td>{money(core_val_subtotal)}</td>
+            <td>100.0%</td>
+            <td>100.0%</td>
+            <td>0.0%</td>
+            <td style="text-align: left; font-style: italic;">Risk Assets Subtotal Split</td>
+        </tr>
+        <tr class="break-row"><td colspan="6" style="background: #cbd5e1; height: 4px; padding:0;"></td></tr>
+    """
+
+    # 3. Inject Cash Below The Line Row (tracked as absolute weight of grand total)
+    for _, row in cash_formatted.iterrows():
+        # Get absolute weight of cash relative to total portfolio
+        cash_pct = (row['Value'] if isinstance(row['Value'], (int, float)) else float(str(row['Value']).replace('$','').replace(',',''))) / total * 100
+        exposure_html += f"<tr><td>{row['Category']}</td><td>{money(cash_exposure['Value'].sum())}</td><td>{cash_pct:.1f}% (of Total)</td><td>7.0%</td><td>{cash_pct - 7.0:+.1f}%</td><td style='text-align: left;'>{row['Reason']}</td></tr>"
+
+    # 4. Inject Grand Total Row
+    exposure_html += f"""
+        <tr class="grand-total-row">
+            <td>Total Portfolio</td>
+            <td>{money(total)}</td>
+            <td>100.0%</td>
+            <td>100.0%</td>
+            <td>0.0%</td>
+            <td></td>
+        </tr>
+        </tbody>
+    </table>
+    """
 
     html = f"""
     <!DOCTYPE html>
@@ -197,22 +203,22 @@ def build_html(detail, retirement, exposure):
         <style>
             body {{ font-family: Arial, sans-serif; margin:40px; background:#f4f6f8; }}
             h1 {{ color:#222; }}
-            .card {{ background:white; padding:20px; margin-bottom:25px; border-radius:10px; }}
+            .card {{ background:white; padding:20px; margin-bottom:25px; border-radius:10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }}
             .table {{ border-collapse: collapse; width: 100%; table-layout: fixed; }}
-            .table th, .table td {{ padding: 8px; border-bottom: 1px solid #ddd; text-align: right; }}
+            .table th, .table td {{ padding: 10px 8px; border-bottom: 1px solid #ddd; text-align: right; }}
             .table th:first-child, .table td:first-child {{ text-align: left; }}
-            .table th:nth-child(1), .table td:nth-child(1) {{ width: 25%; }}
-            .table th:nth-child(2), .table td:nth-child(2) {{ width: 20%; }}
+            .table th:nth-child(1), .table td:nth-child(1) {{ width: 22%; }}
+            .table th:nth-child(2), .table td:nth-child(2) {{ width: 18%; }}
             .table th:nth-child(3), .table td:nth-child(3),
             .table th:nth-child(4), .table td:nth-child(4),
             .table th:nth-child(5), .table td:nth-child(5) {{ width: 12%; }}
-
-            .table th:nth-child(6), .table td:nth-child(6) {{ 
-                width: 30%; 
-                text-align: left;
-            }}
+            .table th:nth-child(6), .table td:nth-child(6) {{ width: 24%; text-align: left; }}
             .table th {{ background:#333; color:white; padding:10px; }}
-            .table tr:last-child {{ font-weight: bold; background: #eee; }} /* Style for Total row */
+            
+            .table tr:last-child, .grand-total-row {{ font-weight: bold; background: #cbd5e1 !important; }}
+            .subtotal-row {{ font-weight: bold; background: #f1f5f9; border-top: 2px solid #333; }}
+            .break-row td {{ border: none !important; }}
+            
             .summary {{ font-size:24px; }}
         </style>
     </head>
@@ -220,9 +226,11 @@ def build_html(detail, retirement, exposure):
         <h1>Retirement Portfolio Dashboard</h1>
         <div class="card">
             <h2>Portfolio Summary</h2>
-            <div class="summary">
-                Total Assets: <b>{money(total)}</b>
-            </div>
+            <div class="summary">Total Assets: <b>{money(total)}</b></div>
+        </div>
+        <div class="card">
+            <h2>Economic Exposure (Core Portfolio Mix Split)</h2>
+            {exposure_html}
         </div>
         <div class="card">
             <h2>Retirement Allocation</h2>
@@ -232,21 +240,19 @@ def build_html(detail, retirement, exposure):
             <h2>Detailed Allocation</h2>
             {table(format_dataframe(detail_with_totals))}
         </div>
-        <div class="card">
-            <h2>Economic Exposure</h2>
-            {table(format_dataframe(exposure_with_totals))}
-        </div>
     </body>
     </html>
     """
     return html
 
 # --------------------------------------------------
-# Main
+# Main Orchestrator
 # --------------------------------------------------
 def main():
     (detail, retirement, lookthrough, alloc_target, retirement_target) = load_data()
     detail, retirement = apply_targets(detail, retirement, alloc_target, retirement_target)
+    lookthrough = format_exposure(lookthrough)
+    
     html = build_html(detail, retirement, lookthrough)
     HTML_FILE.write_text(html)
     print()

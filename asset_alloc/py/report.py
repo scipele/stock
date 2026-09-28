@@ -1,397 +1,95 @@
 #!/usr/bin/env python3
 
 from pathlib import Path
-from matplotlib import category
 import pandas as pd
 
-
-# --------------------------------------------------
-# Paths
-# --------------------------------------------------
-
 BASE_DIR = Path(__file__).resolve().parent.parent
-
 INPUT_DIR = BASE_DIR / "input"
 OUTPUT_DIR = BASE_DIR / "output"
-ASSET_FILE = OUTPUT_DIR / "all_assets.csv"
-TARGET_FILE = INPUT_DIR / "alloc_target.csv"
-REPORT_FILE = OUTPUT_DIR / "allocation_report.csv"
-DETAIL_REPORT_FILE = OUTPUT_DIR / "allocation_detail.csv"
-RETIREMENT_REPORT_FILE = OUTPUT_DIR / "allocation_retirement.csv"
+
 ECONOMIC_FILE = OUTPUT_DIR / "economic_exposure.csv"
+RETIREMENT_REPORT_FILE = OUTPUT_DIR / "allocation_retirement.csv"
+DETAIL_REPORT_FILE = OUTPUT_DIR / "allocation_detail.csv"
 
+def format_economic_exposure(economic_df):
+    # Consolidate raw categories safely into your clean 80/20 structural metrics
+    us_val = economic_df[economic_df["AssetClass"] == "US Stocks"]["Value"].sum()
+    intl_val = economic_df[economic_df["AssetClass"] == "International Stocks"]["Value"].sum()
+    bonds_val = economic_df[economic_df["AssetClass"] == "Bonds"]["Value"].sum()
+    cash_val = economic_df[economic_df["AssetClass"] == "Cash"]["Value"].sum()
 
-# --------------------------------------------------
-# Load CSV
-# --------------------------------------------------
+    total_stocks = us_val + intl_val
+    portfolio_total = total_stocks + bonds_val + cash_val
 
-def load_csv(filename):
+    us_pct = (us_val / total_stocks * 100) if total_stocks > 0 else 0
+    intl_pct = (intl_val / total_stocks * 100) if total_stocks > 0 else 0
+    split_reason = f"Split: {us_pct:.1f}% US / {intl_pct:.1f}% Int'l"
 
-    if not filename.exists():
-        raise FileNotFoundError(filename)
-
-    return pd.read_csv(filename)
-
-
-# --------------------------------------------------
-# Allocation report
-# --------------------------------------------------
-
-def create_report():
-
-    assets = load_csv(
-        ASSET_FILE
-    )
-
-    total = assets["Value"].sum()
-
-
-    # --------------------------------------------------
-    # Detailed report
-    # --------------------------------------------------
-
-    detail = (
-        assets
-        .groupby(
-            "Category",
-            as_index=False
-        )["Value"]
-        .sum()
-    )
-
-
-    detail["Current %"] = (
-        detail["Value"]
-        / total
-        * 100
-    )
-
-        #
-    # Add target allocation
-    #
-
-    targets = load_csv(
-        TARGET_FILE
-    )
-
-    detail = detail.merge(
-        targets,
-        on="Category",
-        how="left"
-    )
-
-    detail["TargetPercent"] = (
-        detail["TargetPercent"]
-        .fillna(0)
-    )
-
-    detail["Reason"] = (
-        detail["Reason"]
-        .fillna("")
-    )
-
-    detail["Difference %"] = (
-        detail["Current %"]
-        -
-        detail["TargetPercent"]
-    )
-
-    detail = detail.sort_values(
-        "Value",
-        ascending=False
-    )
-
-
-    detail = detail[
-        [
-            "Category",
-            "Value",
-            "Current %",
-            "TargetPercent",
-            "Difference %",
-            "Reason"
-        ]
+    exposure_rows = [
+        {
+            "Category": "Total Stocks", "Value": total_stocks,
+            "Current %": (total_stocks / portfolio_total * 100),
+            "TargetPercent": 80.0, "Difference %": (total_stocks / portfolio_total * 100) - 80.0,
+            "Reason": split_reason
+        },
+        {
+            "Category": "Bonds", "Value": bonds_val,
+            "Current %": (bonds_val / portfolio_total * 100),
+            "TargetPercent": 13.0, "Difference %": (bonds_val / portfolio_total * 100) - 13.0,
+            "Reason": "Core fixed-income sequence risk shelter"
+        },
+        {
+            "Category": "Cash", "Value": cash_val,
+            "Current %": (cash_val / portfolio_total * 100),
+            "TargetPercent": 7.0, "Difference %": (cash_val / portfolio_total * 100) - 7.0,
+            "Reason": "Liquid structural early-retirement runway"
+        }
     ]
-
-
-    detail.to_csv(
-        DETAIL_REPORT_FILE,
-        index=False
-    )
-
-
-    #
-    # Organize report columns
-    #
-
-    detail = detail[
-        [
-            "Category",
-            "Value",
-            "Current %",
-            "TargetPercent",
-            "Difference %",
-            "Reason"
-        ]
-    ]
-
-
-    detail.to_csv(
-        DETAIL_REPORT_FILE,
-        index=False
-    )
-
-
-    # --------------------------------------------------
-    # Retirement bucket report
-    # --------------------------------------------------
-
-    retirement = (
-        assets
-        .groupby(
-            "RetirementBucket",
-            as_index=False
-        )["Value"]
-        .sum()
-    )
-
-
-    retirement["Current %"] = (
-        retirement["Value"]
-        / total
-        * 100
-    )
-
-    retirement = retirement.sort_values(
-        "Value",
-        ascending=False
-    )
-
-
-    retirement.to_csv(
-        RETIREMENT_REPORT_FILE,
-        index=False
-    )
-
-    # --------------------------------------------------
-    # Look-through exposure report
-    # --------------------------------------------------
-
-    economic = create_economic_report(
-        assets
-    )
-
-    return detail, retirement, economic, total
-
-
-# --------------------------------------------------
-# Display
-# --------------------------------------------------
-
-def print_report(report, total):
-
-    print()
-    print("=" * 70)
-    print(" Portfolio Allocation Report")
-    print("=" * 70)
-
-    print()
-
-    print(
-        f"Portfolio Total: ${total:,.2f}"
-    )
-
-    print()
-
-    print(
-
-        report[
-            report["TargetPercent"] > 0
-        ][
-            [
-                "Category",
-                "Value",
-                "Current %",
-                "TargetPercent",
-                "Reason",
-                "Difference %"
-            ]
-        ]
-        .to_string(
-            index=False,
-            formatters={
-                "Value": "${:,.0f}".format,
-                "Current %": "{:.1f}%".format,
-                "TargetPercent": "{:.1f}%".format,
-                "Difference %": "{:+.1f}%".format,
-            }
-        )
-    )
-
-    print()
-
-    print("Created:")
-    print(REPORT_FILE)
-
-
-def create_economic_report(df):
-    rows = []
-
-    for _, row in df.iterrows():
-
-        value = row["Value"]
-
-
-        category = row["RetirementBucket"]
-
-        stock_pct = row.get("StockPct",0)
-        bond_pct = row.get("BondPct",0)
-        cash_pct = row.get("CashPct",0)
-        intl_pct = row.get("InternationalPct",0)
-
-
-        #
-        # Private Equity / Individual assets
-        #
-
-        if category in ["Private Equity", "Company Equity"]:
-
-            rows.append(
-                {
-                    "AssetClass": "Private Equity",
-                    "Exposure": "Private Equity",
-                    "Value": value
-                }
-            )
-
-            continue
-
-
-        #
-        # Stock exposure
-        #
-
-         #
-        # Stock exposure
-        #
-
-        if stock_pct > 0:
-
-            stock_value = value * stock_pct / 100
-            intl_value = (stock_value * intl_pct / 100)
-
-            if intl_value > 0:
-                rows.append(
-                    {
-                        "AssetClass": "International Stocks",
-                        "Exposure": "International",
-                        "Value": intl_value
-                    }
-                )
-
-            us_value = (
-                stock_value -
-                intl_value
-            )
-
-            if us_value > 0:
-                rows.append(
-                    {
-                        "AssetClass": "US Stocks",
-                        "Exposure": "Domestic",
-                        "Value": us_value
-                    }
-                )
-
-        #
-        # Bonds
-        #
-
-        if bond_pct > 0:
-
-            rows.append(
-                {
-                    "AssetClass": "Bonds",
-                    "Exposure": "Bonds",
-                    "Value":
-                        value * bond_pct / 100
-                }
-            )
-
-        #
-        # Cash
-        #
-
-        if cash_pct > 0:
-            value = value * cash_pct / 100
-
-            rows.append(
-                {
-                    "AssetClass": "Cash",
-                    "Exposure": "Cash",
-                    "Value": value
-                }
-            )
-
-    result = (
-        pd.DataFrame(rows)
-        .groupby(
-            [
-                "AssetClass",
-                "Exposure"
-            ],
-            as_index=False
-        )
-        ["Value"]
-        .sum()
-        .sort_values(
-            "Value",
-            ascending=False
-        )
-    )
-
-
-    result.to_csv(
-        ECONOMIC_FILE,
-        index=False
-    )
-
-
-    return result
-
-
-# --------------------------------------------------
-# Main
-# --------------------------------------------------
-
-if __name__ == "__main__":
-
-    detail, retirement, economic, total = create_report()
+    return pd.DataFrame(exposure_rows), portfolio_total
+def print_final_terminal_report(economic_df):
+    print("\n" + "="*70)
+    print(" Economic Exposure (Core Portfolio Mix)")
+    print("="*70 + "\n")
+
+    print_df, portfolio_total = format_economic_exposure(economic_df)
     
-    print()
-    print("=" * 70)
-    print(" Retirement Allocation")
-    print("=" * 70)
+    core_df = print_df[print_df["Category"].isin(["Total Stocks", "Bonds"])]
+    cash_row = print_df[print_df["Category"] == "Cash"]
 
-    print()
+    # Print clean core portfolio metrics 
     print(
-        f"Portfolio Total: ${total:,.2f}"
-    )
-
-    print()
-
-    print(
-        retirement.to_string(
+        core_df.to_string(
             index=False,
+            header=["Category", "Value", "Current %", "TargetPercent", "Difference %", "Reason"],
             formatters={
-                "Value": "${:,.0f}".format,
-                "Current %": "{:.1f}%".format
+                "Value": "${:,.2f}".format, "Current %": "{:.1f}%".format,
+                "TargetPercent": "{:.1f}%".format,
+                "Difference %": lambda x: f"{x:+.1f}%" if abs(x) > 0.01 else "0.0%"
             }
         )
     )
 
-    print()
-    print("Created:")
-    print(DETAIL_REPORT_FILE)
-    print(RETIREMENT_REPORT_FILE)
-    print(ECONOMIC_FILE)
+    current_equity = float(print_df.loc[print_df["Category"] == "Total Stocks", "Current %"].values)
+    current_bonds = float(print_df.loc[print_df["Category"] == "Bonds", "Current %"].values)
+    current_cash = float(print_df.loc[print_df["Category"] == "Cash", "Current %"].values)
+
+    print("-" * 70)
+    print(f"CORE RISK ALLOCATION: {current_equity:.1f}% Equity / {current_bonds:.1f}% Bonds  --> [{current_equity:.0f}/{current_bonds:.0f} Split]")
+    print("=" * 70)
+    print(" BELOW THE LINE: Short-Term Operational Cash Safety Buffer")
+    print("=" * 70)
+
+    # Print safe buffer cash metrics cleanly below the cut lines
+    print(
+        cash_row.to_string(
+            index=False, header=False,
+            formatters={
+                "Value": "${:,.2f}".format, "Current %": "{:.1f}%".format,
+                "TargetPercent": "{:.1f}%".format,
+                "Difference %": lambda x: f"{x:+.1f}%" if abs(x) > 0.01 else "0.0%"
+            }
+        )
+    )
+    print("-" * 70)
+    print(f"OVERALL ASSET RATIO:  {current_equity:.1f}% Equity / {(current_bonds + current_cash):.1f}% Fixed & Cash Buffer")
+    print("=" * 70 + "\n")
