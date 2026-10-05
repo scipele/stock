@@ -27,18 +27,6 @@ read -p "   1.1b Include S&P 500 tickers? (y/n) " INCLUDE_SP500
 read -p "   1.1c Include Russell 2000 tickers? (y/n) " INCLUDE_RUSSELL
 read -p "   1.1d Include 'other' tickers? (y/n) " INCLUDE_OTHER
 read -p "   1.1e Include recent top-score tickers? (y/n) " INCLUDE_TOP_SCORES
-read -p "   1.2  Update fundamentals (recom daily)? (y/n) " UPDATE_FUNDAMENTALS
-read -p "   1.3  Update Ticker Metadata (recom monthly)? (y/n) " UPDATE_TICKER_METADATA
-read -p "   1.4  Run the C++ scanner? (y/n) " RUN_CPP_SCANNER
-echo
-echo "   ================== Program #2 - Intrinsic Value Questions ======================="
-read -p "   2.1  Copy latest tickers_combined.csv from buy_opp? (y/n) " COPY_TICKERS
-read -p "   2.2  Update intrinsic-value data (recom daily/weekly)? (y/n) " UPDATE_DATA
-echo
-echo "   ================== Program #3 - Data Combination & Report  ======================"
-read -p "   3.1  Copy files from the other programs? (y/n): " COPY_FILES
-read -p "   3.2  Run the C++ program to combine the files? (y/n): " RUN_CPP_COMBINER
-read -p "   3.3  Create the LibreOffice report? (y/n): " CREATE_REPORT
 
 # Convert all user input to lowercase for consistency
 UPDATE_CUR_POSITIONS="${UPDATE_CUR_POSITIONS,,}"
@@ -47,14 +35,22 @@ INCLUDE_SP500="${INCLUDE_SP500,,}"
 INCLUDE_RUSSELL="${INCLUDE_RUSSELL,,}"
 INCLUDE_OTHER="${INCLUDE_OTHER,,}"
 INCLUDE_TOP_SCORES="${INCLUDE_TOP_SCORES,,}"
-UPDATE_FUNDAMENTALS="${UPDATE_FUNDAMENTALS,,}"
-UPDATE_TICKER_METADATA="${UPDATE_TICKER_METADATA,,}"
-RUN_CPP_SCANNER="${RUN_CPP_SCANNER,,}"
-COPY_TICKERS="${COPY_TICKERS,,}"
-UPDATE_DATA="${UPDATE_DATA,,}"
-COPY_FILES="${COPY_FILES,,}"
-RUN_CPP_COMBINER="${RUN_CPP_COMBINER,,}"
-CREATE_REPORT="${CREATE_REPORT,,}"
+
+# ==========================================
+# HARDCODED INPUTS FOR 1.2 AND AFTER (AUTO-YES)
+# ==========================================
+UPDATE_FUNDAMENTALS="y"
+UPDATE_TICKER_METADATA="y"
+RUN_CPP_SCANNER="y"
+
+# Program #2 Variables
+COPY_TICKERS="y"
+UPDATE_DATA="y"
+
+# Program #3 Variables
+COPY_FILES="y"
+RUN_CPP_COMBINER="y"
+CREATE_REPORT="y"
 
 START_TIME=$(date +%s)
 

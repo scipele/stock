@@ -328,12 +328,20 @@ void calculateIntrinsicValues(std::vector<StockData>& stocks) {
 // ------------------------------------------------------------------
 // Write ranked summary
 // ------------------------------------------------------------------
+// ------------------------------------------------------------------
+// Write ranked summary
+// ------------------------------------------------------------------
 void writeSummary(const std::vector<StockData>& stocks, const std::string& path) {
-    // Sort by margin of safety (descending) – only valid ones first
+    // Sort by margin of safety (descending) – treating negatives as zero
     std::vector<StockData> sorted = stocks;
     std::sort(sorted.begin(), sorted.end(), [](const StockData& a, const StockData& b) {
         if (a.valid != b.valid) return a.valid > b.valid;
-        return a.marginOfSafety > b.marginOfSafety;
+        
+        // Treat negative margin of safety as 0.0 for sorting purposes
+        double mosA = std::max(0.0, a.marginOfSafety);
+        double mosB = std::max(0.0, b.marginOfSafety);
+        
+        return mosA > mosB;
     });
 
     std::ofstream out(path);
@@ -356,26 +364,29 @@ void writeSummary(const std::vector<StockData>& stocks, const std::string& path)
             upside = (s.intrinsicValue - s.price) / s.price * 100.0;
         }
 
-        out << rank << ","
-            << s.ticker << ","
-            << "\"" << s.company << "\","
-            << s.sector << ","
-            << s.exch << ","
-            << s.index << ","
-            << std::fixed << std::setprecision(2) << s.price << ","
-            << std::setprecision(2) << s.intrinsicValue << ","
-            << std::setprecision(1) << s.marginOfSafety << ","
-            << std::setprecision(1) << upside << ","
-            << std::setprecision(4) << s.growthRate << ","
-            << std::setprecision(4) << s.wacc << ","
-            << std::setprecision(0) << s.fcfTTM << ","
-            << std::setprecision(0) << s.netDebt << ","
-            << std::setprecision(0) << s.shares << ","
-            << std::setprecision(0) << s.marketCap << ","
-            << std::setprecision(2) << s.forwardPE << ","
-            << std::setprecision(2) << s.trailingPE << ","
+        // Clamp the printed margin of safety to 0.0 if it is negative
+        double displayMarginOfSafety = std::max(0.0, s.marginOfSafety);
+
+        out << rank << "," 
+            << s.ticker << "," 
+            << "\"" << s.company << "\"," 
+            << s.sector << "," 
+            << s.exch << "," 
+            << s.index << "," 
+            << std::fixed << std::setprecision(2) << s.price << "," 
+            << std::setprecision(2) << s.intrinsicValue << "," 
+            << std::setprecision(1) << displayMarginOfSafety << "," // Using clamped value here
+            << std::setprecision(1) << upside << "," 
+            << std::setprecision(4) << s.growthRate << "," 
+            << std::setprecision(4) << s.wacc << "," 
+            << std::setprecision(0) << s.fcfTTM << "," 
+            << std::setprecision(0) << s.netDebt << "," 
+            << std::setprecision(0) << s.shares << "," 
+            << std::setprecision(0) << s.marketCap << "," 
+            << std::setprecision(2) << s.forwardPE << "," 
+            << std::setprecision(2) << s.trailingPE << "," 
             << s.dataQuality << "\n";
     }
 
-    std::cout << "       Wrote " << rank << " valid stocks → " << path << "\n";
+    std::cout << "  Wrote " << rank << " valid stocks → " << path << "\n";
 }

@@ -954,109 +954,23 @@ void loadIntrinsicValue(
 // ============================================================
 // Calculate Intrinsic Score
 // ============================================================
-
 double calculateIntrinsicScore(const Stock& s)
 {
-    double score = 0.0;
+    double score = s.marginSafety;
 
-
-    // ----------------------------------------
-    // Margin of Safety - 45%
-    // ----------------------------------------
-
-    double mosScore = s.marginSafety;
-
-    if(mosScore > 100)
-        mosScore = 100;
-
-    if(mosScore < 0)
-        mosScore = 0;
-
-
-    score += mosScore * 0.45;
-
-
-
-    // ----------------------------------------
-    // Upside - 25%
-    // ----------------------------------------
-
-    double upsideScore =
-        s.upside / 4.0;
-
-
-    if(upsideScore > 100)
-        upsideScore = 100;
-
-    if(upsideScore < 0)
-        upsideScore = 0;
-
-
-    score += upsideScore * 0.25;
-
-
-
-    // ----------------------------------------
-    // Forward PE - 10%
-    // ----------------------------------------
-
-    double peScore = 50;
-
-
-    if(s.forwardPE > 0)
-    {
-        if(s.forwardPE < 10)
-            peScore = 100;
-
-        else if(s.forwardPE < 20)
-            peScore = 75;
-
-        else if(s.forwardPE < 30)
-            peScore = 50;
-
-        else
-            peScore = 25;
+    // Cap the maximum score at 100
+    if (score > 100.0) {
+        score = 100.0;
     }
 
+    // Floor any negative or zero margin of safety at 0
+    if (score < 0.0) {
+        score = 0.0;
+    }
 
-    score += peScore * 0.10;
-
-
-
-    // ----------------------------------------
-    // Growth Rate - 10%
-    // ----------------------------------------
-
-    double growthScore = 50;
-
-
-    if(s.growthRate > 0.10)
-        growthScore = 100;
-
-    else if(s.growthRate > 0.05)
-        growthScore = 75;
-
-    else if(s.growthRate > 0)
-        growthScore = 50;
-
-    else
-        growthScore = 25;
-
-
-    score += growthScore * 0.10;
-
-
-
-    // ----------------------------------------
-    // Data Quality - 10%
-    // ----------------------------------------
-
-    if(s.dataQuality == "ok")
-        score += 100 * 0.10;
-
-
-    return min(score,100.0);
+    return score;
 }
+
 
 
 
