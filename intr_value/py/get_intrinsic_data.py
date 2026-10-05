@@ -187,8 +187,10 @@ def get_data(ticker, index_membership):
             result["FCF_Y3"] = fcf_hist[2]
             result["FCF_Y4"] = fcf_hist[3]
             result["FCF_Y5"] = fcf_hist[4]
-        except Exception:
+        
+        except Exception as e:
             result["DataQuality"] = "no_cashflow"
+            print(f"\n      ERROR {ticker} cashflow: {type(e).__name__}: {e}", flush=True)
 
         try:
             financials = stock.financials
@@ -198,15 +200,17 @@ def get_data(ticker, index_membership):
             result["Rev_Y3"] = rev_hist[2]
             result["Rev_Y4"] = rev_hist[3]
             result["Rev_Y5"] = rev_hist[4]
-        except Exception:
+        except Exception as e:
             if result["DataQuality"] == "ok":
                 result["DataQuality"] = "no_revenue"
+            print(f"\n      ERROR {ticker} financials: {type(e).__name__}: {e}", flush=True)
 
         if result["Price"] <= 0 or result["SharesOutstanding"] <= 0:
             result["DataQuality"] = "missing_price_or_shares"
 
     except Exception as e:
         result["DataQuality"] = "fetch_failed"
+        print(f"\n      ERROR {ticker}: {type(e).__name__}: {e}", flush=True)
 
     return result
 
