@@ -255,38 +255,41 @@ void calculateIntrinsicValues(std::vector<StockData>& stocks) {
         wacc = std::clamp(wacc, p.minWacc, MAX_WACC);
         s.wacc = wacc;
 
-        // --- Starting FCF ---
+        // --- Starting FCF (more realistic version) ---
         double fcf0 = s.fcfTTM;
-        if (fcf0 <= 0.0) fcf0 = s.fcf[0];
 
-        double avg_positive_fcf = 0.0;
-        int cnt = 0;
+        // Collect positive historical FCFs
+        double sum = 0.0;
+        int    cnt = 0;
         for (int i = 0; i < 5; ++i) {
             if (s.fcf[i] > 0.0) {
-                avg_positive_fcf += s.fcf[i];
+                sum += s.fcf[i];
                 ++cnt;
             }
         }
-        if (cnt >= 3) {
-            avg_positive_fcf /= cnt;
-            // If TTM is less than 60% of the recent average, use the average
-            if (fcf0 < 0.60 * avg_positive_fcf) {
-                fcf0 = avg_positive_fcf;
-            }
-        }
+        double avg_positive = (cnt > 0) ? (sum / cnt) : 0.0;
 
-        if (fcf0 <= 0.0) {
-            double sum = 0.0;
-            int cnt = 0;
-            for (int i = 0; i < 5; ++i) {
-                if (s.fcf[i] > 0.0) {
-                    sum += s.fcf[i];
-                    ++cnt;
+        if (fcf0 > 0.0) {
+            // We have a real TTM → use the more conservative of TTM or average
+            if (avg_positive > 0.0) {
+                fcf0 = std::min(fcf0, avg_positive);
+            }
+        } else {
+            // TTM is missing/zero
+            if (cnt >= 2) {
+                // For seasonal names (Basic Materials / Consumer Cyclical / etc.)
+                // apply a mild haircut to the average so a peak year doesn't dominate
+                if (s.sector == 1 || s.sector == 3) {          // Basic Materials or Consumer Cyclical
+                    fcf0 = avg_positive * 0.70;                // 30% haircut
+                } else {
+                    fcf0 = avg_positive;
                 }
+            } else if (cnt == 1) {
+                fcf0 = sum * 0.60;                             // single year → bigger haircut
             }
-            if (cnt > 0) fcf0 = sum / cnt;
         }
 
+        // Final safety
         if (fcf0 <= 0.0) {
             s.valid = false;
             continue;
