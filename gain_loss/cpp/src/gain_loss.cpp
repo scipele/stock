@@ -23,7 +23,9 @@ namespace fs = std::filesystem;
 
 const std::string DOWNLOAD_DIR = "/home/ts/Downloads";
 const std::string OUTPUT_DIR = "/home/dev/stock/gain_loss/output";
+const std::string IGNORE_SYMBOLS_FILE = "/home/dev/stock/gain_loss/input/ignore_symbols.csv";
 const double EPSILON = 0.00001;
+
 
 std::string trim(const std::string& s)
 {
@@ -34,6 +36,7 @@ std::string trim(const std::string& s)
     size_t last = s.find_last_not_of(" \t\r\n");
     return s.substr(first, last - first + 1);
 }
+
 
 std::string remove_quotes(const std::string& s)
 {
@@ -52,6 +55,7 @@ std::string remove_quotes(const std::string& s)
     return result;
 }
 
+
 std::string remove_commas(const std::string& s)
 {
     std::string result;
@@ -62,6 +66,7 @@ std::string remove_commas(const std::string& s)
     }
     return result;
 }
+
 
 double to_double(const std::string& value)
 {
@@ -89,6 +94,7 @@ double to_double(const std::string& value)
         return 0.0;
     }
 }
+
 
 std::vector<std::string> parse_csv_line(const std::string& line)
 {
@@ -125,6 +131,45 @@ std::vector<std::string> parse_csv_line(const std::string& line)
     fields.push_back(field);
     return fields;
 }
+
+
+std::set<std::string> load_ignore_symbols(const std::string& filename)
+{
+    std::set<std::string> ignore;
+    std::ifstream file(filename);
+    if (!file)
+    {
+        std::cerr << "WARNING: Cannot open ignore symbols file:\n" << filename
+                  << "\nContinuing without ignoring any symbols.\n";
+        return ignore;
+    }
+
+    std::string line;
+    bool first = true;
+    while (std::getline(file, line))
+    {
+        if (trim(line).empty())
+            continue;
+
+        auto fields = parse_csv_line(line);
+        if (fields.empty())
+            continue;
+
+        std::string sym = remove_quotes(fields[0]);
+        if (first)
+        {
+            first = false;
+            // Skip header row (expects "Symbol")
+            if (sym == "Symbol" || sym == "symbol")
+                continue;
+        }
+
+        if (!sym.empty())
+            ignore.insert(sym);
+    }
+    return ignore;
+}
+
 
 struct Date
 {
@@ -232,7 +277,7 @@ fs::path find_newest_positions_file()
             continue;
 
         std::string name = entry.path().filename().string();
-        if (!contains(name, "Fund-Positions-"))
+        if (!contains(name, "All-Accounts-Positions-"))
             continue;
 
         if (entry.path().extension() != ".csv")
@@ -487,7 +532,8 @@ struct DailySymbolSummary
 std::map<std::string, std::map<std::string, DailySymbolSummary>> compute_daily_gain_results(
     const std::vector<Transaction>& transactions,
     const Date& start,
-    const Date& end)
+    const Date& end,
+    const std::set<std::string>& ignore_symbols)
 {
     std::map<std::string, std::vector<BuyLot>> lots_by_symbol;
     std::map<std::string, std::deque<BuyLot>> pending_transfers_by_symbol;
@@ -592,7 +638,10 @@ std::map<std::string, std::map<std::string, DailySymbolSummary>> compute_daily_g
                 pending_transfers_by_symbol[tx.symbol].push_back({lot.date, matched, lot.price});
             }
 
-            if (!is_transfer_out && date_greater_than_or_equal(tx.date, start) && date_less_than_or_equal(tx.date, end))
+            if (!is_transfer_out &&
+                date_greater_than_or_equal(tx.date, start) &&
+                date_less_than_or_equal(tx.date, end) &&
+                ignore_symbols.find(tx.symbol) == ignore_symbols.end())
             {
                 int held_days = days_between(lot.date, tx.date);
                 std::string day_key = date_to_string(tx.date);
@@ -703,6 +752,10 @@ int main(int argc, char* argv[])
         return 1;
     }
 
+    auto ignore_symbols = load_ignore_symbols(IGNORE_SYMBOLS_FILE);
+    std::cout << "Ignoring " << ignore_symbols.size() << " symbols from "
+              << IGNORE_SYMBOLS_FILE << "\n";
+
     fs::create_directories(OUTPUT_DIR);
 
     fs::path prepared_positions_file = fs::path(OUTPUT_DIR) / "positions.csv";
@@ -758,7 +811,7 @@ int main(int argc, char* argv[])
         copy_source_file(transactions_file, "transactions.csv");
     }
 
-    auto daily = compute_daily_gain_results(transactions, start, end);
+    auto daily = compute_daily_gain_results(transactions, start, end, ignore_symbols);
     write_gain_loss_csv(daily);
 
     double total_gain = 0.0;
