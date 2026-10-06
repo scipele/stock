@@ -44,11 +44,11 @@ const SectorParams SECTOR_PARAMS[13] = {
 
 
 const SectorParams& getSectorParams(int sectorCode) {
-    if (sectorCode < 1 || sectorCode > 12)
+    // Corrected to bounds-check within the valid 0-11 index range
+    if (sectorCode < 1 || sectorCode >= 12) 
         return SECTOR_PARAMS[0];
     return SECTOR_PARAMS[sectorCode];
 }
-
 
 // ------------------------------------------------------------------------
 // Simple CSV helpers
@@ -187,6 +187,13 @@ void calculateIntrinsicValues(std::vector<StockData>& stocks) {
             continue;
         }
 
+        // NEW FIXED SECTION: Explicitly exclude Financial Services (Sector Code 6) 
+        // from the Free Cash Flow DCF model to prevent inflated valuations.
+        if (s.sector == 6) {
+            s.valid = false; 
+            continue; 
+        }
+
         // -------------------------------------------------------
         // Data-quality filter (catches bad FCF numbers)
         // -------------------------------------------------------
@@ -210,6 +217,15 @@ void calculateIntrinsicValues(std::vector<StockData>& stocks) {
             s.valid = false;
             continue;
         }
+
+        // NEW FIXED SECTION: Financial firm safety valve.
+        // If historical cash values are entirely 0 or negative but the TTM number 
+        // randomly prints in the billions, throw it out immediately.
+        if (max_hist_fcf <= 0.0 && fcf_for_check > 1000000.0) {
+            s.valid = false;
+            continue;
+        }
+
 
         // Optional extra safety: reject extremely negative FCF
         // that would make the whole DCF meaningless
