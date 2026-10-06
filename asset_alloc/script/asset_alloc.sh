@@ -50,3 +50,5 @@ echo "$OUTPUT_DIR/allocation_report.html"
 
 xdg-open "$OUTPUT_DIR/allocation_report.html" >/dev/null 2>&1 &
 
+echo
+read -p "Press Enter to close this terminal..."
