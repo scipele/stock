@@ -5,7 +5,13 @@ import csv
 import pandas as pd
 
 
+BASE_DIR = Path(__file__).resolve().parent.parent
+INPUT_DIR = BASE_DIR / "input"
+OUTPUT_DIR = BASE_DIR / "output"
+
 DOWNLOAD_DIR = Path("/home/ts/Downloads")
+ASSET_MAP_FILE = INPUT_DIR / "asset_map.csv"
+OUTPUT_FILE = OUTPUT_DIR / "schwab_assets.csv"
 
 
 # --------------------------------------------------
@@ -214,13 +220,133 @@ def load_schwab():
     return result
 
 
+def load_asset_map():
+
+    if not ASSET_MAP_FILE.exists():
+        raise FileNotFoundError(
+            ASSET_MAP_FILE
+        )
+
+    asset_map = pd.read_csv(
+        ASSET_MAP_FILE,
+        dtype={"Symbol": str}
+    )
+
+    asset_map["Symbol"] = (
+        asset_map["Symbol"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
+
+    map_columns = [
+        "Symbol",
+        "Category",
+        "SubCategory",
+        "SourceType",
+        "RetirementBucket",
+        "StockPct",
+        "BondPct",
+        "CashPct",
+        "InternationalPct",
+    ]
+
+    return asset_map[map_columns]
+
+
+def apply_asset_map(schwab_df, asset_map):
+
+    result = schwab_df.copy()
+    result["Symbol"] = (
+        result["Symbol"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
+
+    result = result.merge(
+        asset_map,
+        on="Symbol",
+        how="left"
+    )
+
+    equity_unmapped = (
+        result["Category"].isna()
+        & (
+            result["Asset Type"]
+            .fillna("")
+            .str.strip() == "Equity"
+        )
+    )
+
+    result.loc[equity_unmapped, "Category"] = "Individual Stock"
+    result.loc[equity_unmapped, "SubCategory"] = "Stock"
+    result.loc[equity_unmapped, "SourceType"] = ""
+    result.loc[equity_unmapped, "RetirementBucket"] = "Individual Stock"
+    result.loc[equity_unmapped, "StockPct"] = 100
+    result.loc[equity_unmapped, "BondPct"] = 0
+    result.loc[equity_unmapped, "CashPct"] = 0
+    result.loc[equity_unmapped, "InternationalPct"] = 0
+
+    pct_columns = [
+        "StockPct",
+        "BondPct",
+        "CashPct",
+        "InternationalPct",
+    ]
+    for col in pct_columns:
+        result[col] = (
+            pd.to_numeric(
+                result[col],
+                errors="coerce"
+            )
+            .fillna(0)
+        )
+
+    ordered_columns = [
+        "Source",
+        "Account",
+        "Symbol",
+        "Description",
+        "Value",
+        "Asset Type",
+        "Category",
+        "SubCategory",
+        "SourceType",
+        "RetirementBucket",
+        "StockPct",
+        "BondPct",
+        "CashPct",
+        "InternationalPct",
+    ]
+
+    return result[ordered_columns]
+
+
 # --------------------------------------------------
 # Test
 # --------------------------------------------------
 
 if __name__ == "__main__":
 
+    OUTPUT_DIR.mkdir(
+        exist_ok=True
+    )
+
     data = load_schwab()
+    asset_map = load_asset_map()
+    data = apply_asset_map(
+        data,
+        asset_map
+    )
+
+    data.to_csv(
+        OUTPUT_FILE,
+        index=False
+    )
 
     print()
+    print(
+        f"Created: {OUTPUT_FILE}"
+    )
     print(data)

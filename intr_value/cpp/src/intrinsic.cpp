@@ -351,16 +351,11 @@ void calculateIntrinsicValues(std::vector<StockData>& stocks) {
 // Write ranked summary
 // ------------------------------------------------------------------
 void writeSummary(const std::vector<StockData>& stocks, const std::string& path) {
-    // Sort by margin of safety (descending) – treating negatives as zero
+    // Sort by margin of safety (descending), preserving negative values.
     std::vector<StockData> sorted = stocks;
     std::sort(sorted.begin(), sorted.end(), [](const StockData& a, const StockData& b) {
         if (a.valid != b.valid) return a.valid > b.valid;
-        
-        // Treat negative margin of safety as 0.0 for sorting purposes
-        double mosA = std::max(0.0, a.marginOfSafety);
-        double mosB = std::max(0.0, b.marginOfSafety);
-        
-        return mosA > mosB;
+        return a.marginOfSafety > b.marginOfSafety;
     });
 
     std::ofstream out(path);
@@ -383,8 +378,7 @@ void writeSummary(const std::vector<StockData>& stocks, const std::string& path)
             upside = (s.intrinsicValue - s.price) / s.price * 100.0;
         }
 
-        // Clamp the printed margin of safety to 0.0 if it is negative
-        double displayMarginOfSafety = std::max(0.0, s.marginOfSafety);
+        const double displayMarginOfSafety = s.marginOfSafety;
 
         out << rank << "," 
             << s.ticker << "," 

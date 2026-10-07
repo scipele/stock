@@ -72,7 +72,7 @@ def create_report():
     retirement.to_csv(RETIREMENT_REPORT_FILE, index=False)
 
     economic = create_economic_report(assets)
-    return detail, retirement, economic, total
+    return detail, retirement, economic, total, assets
 
 
 def create_economic_report(df):
@@ -160,7 +160,7 @@ def create_economic_report(df):
 # --------------------------------------------------
 if __name__ == "__main__":
 
-    detail, retirement, economic, total = create_report()
+    detail, retirement, economic, total, assets = create_report()
     
     print()
     print("=" * 70)
@@ -179,6 +179,37 @@ if __name__ == "__main__":
             }
         )
     )
+
+    print()
+    print("=" * 70)
+    print(" Bond Holdings Check")
+    print("=" * 70)
+    print()
+
+    bond_check = assets.copy()
+    bond_check["BondPct"] = pd.to_numeric(bond_check["BondPct"], errors="coerce").fillna(0)
+    bond_check = bond_check[bond_check["BondPct"] > 0].copy()
+    bond_check["Bond Exposure"] = bond_check["Value"] * bond_check["BondPct"] / 100.0
+    bond_check["Symbol"] = bond_check["Symbol"].fillna("").replace("", "-")
+
+    if bond_check.empty:
+        print("No holdings with BondPct > 0 found.")
+    else:
+        bond_check = bond_check.sort_values("Bond Exposure", ascending=False)
+        print(
+            bond_check[
+                ["Symbol", "Description", "Category", "Value", "BondPct", "Bond Exposure"]
+            ].to_string(
+                index=False,
+                formatters={
+                    "Value": "${:,.2f}".format,
+                    "BondPct": "{:.1f}%".format,
+                    "Bond Exposure": "${:,.2f}".format,
+                },
+            )
+        )
+        print("-" * 70)
+        print(f"Total Bond Exposure Check: ${bond_check['Bond Exposure'].sum():,.2f}")
 
     # --------------------------------------------------
     # Custom Carved Out 80/20 Plan Matrix Visualization

@@ -10,6 +10,16 @@ The main entry point is:
 /home/dev/stock/intraday_charting/script/chart.sh
 ```
 
+## Python Dependencies
+
+Install Python packages into the configured virtual environment:
+
+```bash
+/home/dev/py/.venv/bin/python -m pip install -r /home/dev/stock/intraday_charting/requirements.txt
+```
+
+`requirements.txt` includes `six`, which is required by `mplfinance`.
+
 The script is designed to make it easy to build a list of stocks from several sources, download the latest intraday data, generate charts, and open all of the charts in a gallery.
 
 The ticker list can be built from:

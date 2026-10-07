@@ -964,8 +964,8 @@ double calculateIntrinsicScore(const Stock& s)
     }
 
     // Floor any negative or zero margin of safety at 0
-    if (score < 0.0) {
-        score = 0.0;
+    if (score < -100.0) {
+        score = -100.0;
     }
 
     return score;

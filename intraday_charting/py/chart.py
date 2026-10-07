@@ -2,10 +2,20 @@ import argparse
 import pandas as pd
 import numpy as np
 import yfinance as yf
-import mplfinance as mpf
 import re
 import matplotlib.pyplot as plt
 from pathlib import Path
+
+try:
+    import mplfinance as mpf
+except ModuleNotFoundError as exc:
+    missing_name = exc.name or "unknown"
+    raise SystemExit(
+        "Missing Python dependency "
+        f"'{missing_name}'. Install requirements with:\n"
+        "/home/dev/py/.venv/bin/python -m pip install -r "
+        "/home/dev/stock/intraday_charting/requirements.txt"
+    ) from exc
 
 # --- EXCLUSION FILTERS CONFIGURED AT THE TOP ---
 EXCLUDE_NAMES_CONTAINING = r"etf|fund|money|adm"

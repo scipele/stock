@@ -8,6 +8,8 @@ DOWNLOAD_DIR="$HOME/Downloads"
 TOP_BUY_OPP_RANK_FILE="/home/dev/stock/buy_opp/output/summary_all.csv"
 TOP_INTR_BUY_RANK_FILE="/home/dev/stock/intr_buy/output/combined_report.csv"
 TOP_OVERALL_WEIGHTED_FILE="/home/dev/stock/intr_buy/output/combined_report.csv"
+PYTHON_BIN="/home/dev/py/.venv/bin/python"
+REQUIREMENTS_FILE="/home/dev/stock/intraday_charting/requirements.txt"
 
 
 # Words to exclude from position descriptions (case-insensitive)
@@ -320,7 +322,14 @@ echo
 echo
 if [[ $? -eq 0 ]]; then
     echo "5. Run Python Script: Generating charts for $chart_days days..."
-    /home/dev/py/.venv/bin/python /home/dev/stock/intraday_charting/py/chart.py --days "$chart_days"
+    if ! "$PYTHON_BIN" -c "import matplotlib, mplfinance, numpy, pandas, six, yfinance" >/dev/null 2>&1; then
+        echo "   Installing missing Python dependencies from $REQUIREMENTS_FILE..."
+        "$PYTHON_BIN" -m pip install -r "$REQUIREMENTS_FILE" || {
+            echo "Error: Could not install Python dependencies."
+            exit 1
+        }
+    fi
+    "$PYTHON_BIN" /home/dev/stock/intraday_charting/py/chart.py --days "$chart_days"
 else
     echo "Error: C++ data fetch failed. Skipping chart generation."
     exit 1
