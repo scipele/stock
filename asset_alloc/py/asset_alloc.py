@@ -18,6 +18,7 @@ REPORT_FILE = OUTPUT_DIR / "allocation_report.csv"
 DETAIL_REPORT_FILE = OUTPUT_DIR / "allocation_detail.csv"
 RETIREMENT_REPORT_FILE = OUTPUT_DIR / "allocation_retirement.csv"
 ECONOMIC_FILE = OUTPUT_DIR / "economic_exposure.csv"
+ECONOMIC_TARGET_FILE = INPUT_DIR / "economic_target.csv"
 
 
 # --------------------------------------------------
@@ -27,36 +28,64 @@ def load_csv(filename):
     if not filename.exists():
         raise FileNotFoundError(filename)
     return pd.read_csv(filename)
+
+
+def normalize_bucket_name(value):
+    if pd.isna(value):
+        return value
+    label = str(value).strip()
+    if label in {"Bonds", "Fixed Income"}:
+        return "Bonds / Fixed Income"
+    if label == "Balanced":
+        return "Balanced (includes bonds)"
+    if label == "Balanced Funds":
+        return "Balanced Funds (includes bonds)"
+    return label
+
 # --------------------------------------------------
 # Allocation report Processing
 # --------------------------------------------------
 def create_report():
     assets = load_csv(ASSET_FILE)
     total = assets["Value"].sum()
+    assets["Category"] = assets["Category"].map(normalize_bucket_name)
+    assets["RetirementBucket"] = assets["RetirementBucket"].map(normalize_bucket_name)
 
     # 1. Detailed report
     detail = assets.groupby("Category", as_index=False)["Value"].sum()
-    detail["Current %"] = (detail["Value"] / total * 100)
-
     targets = load_csv(TARGET_FILE)
-    detail = detail.merge(targets, on="Category", how="left")
-    detail["TargetPercent"] = detail["TargetPercent"].fillna(0)
+    targets["Category"] = targets["Category"].map(normalize_bucket_name)
+    detail = detail.merge(targets[["Category", "TargetPercent", "Reason"]], on="Category", how="outer")
+    detail["Value"] = pd.to_numeric(detail["Value"], errors="coerce").fillna(0)
+    detail["TargetPercent"] = pd.to_numeric(detail["TargetPercent"], errors="coerce").fillna(0)
     detail["Reason"] = detail["Reason"].fillna("")
+    detail["Current %"] = (detail["Value"] / total * 100) if total else 0
     detail["Difference %"] = detail["Current %"] - detail["TargetPercent"]
-    detail = detail.sort_values("Value", ascending=False)
+    detail = detail.sort_values(["Value", "Category"], ascending=[False, True])
 
     detail = detail[["Category", "Value", "Current %", "TargetPercent", "Difference %", "Reason"]]
     detail.to_csv(DETAIL_REPORT_FILE, index=False)
 
     # 2. Retirement bucket report
     retirement = assets.groupby("RetirementBucket", as_index=False)["Value"].sum()
-    retirement["Current %"] = (retirement["Value"] / total * 100)
+    retirement["Current %"] = (retirement["Value"] / total * 100) if total else 0
 
     if RETIREMENT_TARGET_FILE.exists():
         ret_targets = load_csv(RETIREMENT_TARGET_FILE)
-        retirement = retirement.merge(ret_targets, on="RetirementBucket", how="left")
-        retirement["TargetPercent"] = retirement["TargetPercent"].fillna(0)
+        ret_targets["RetirementBucket"] = ret_targets["RetirementBucket"].map(normalize_bucket_name)
+        ret_targets = ret_targets.groupby("RetirementBucket", as_index=False).agg(
+            TargetPercent=("TargetPercent", "sum"),
+            Reason=("Reason", lambda s: s.dropna().iloc[0] if s.notna().any() else "")
+        )
+        retirement = retirement.merge(ret_targets, on="RetirementBucket", how="outer")
+        retirement["Value"] = pd.to_numeric(retirement["Value"], errors="coerce").fillna(0)
+        retirement["TargetPercent"] = pd.to_numeric(retirement["TargetPercent"], errors="coerce").fillna(0)
         retirement["Reason"] = retirement["Reason"].fillna("")
+        retirement["Current %"] = (retirement["Value"] / total * 100) if total else 0
+        retirement["Difference %"] = retirement["Current %"] - retirement["TargetPercent"]
+    else:
+        retirement["TargetPercent"] = 0.0
+        retirement["Reason"] = ""
         retirement["Difference %"] = retirement["Current %"] - retirement["TargetPercent"]
 
     # Explicitly calculate a clean Total row
@@ -67,7 +96,7 @@ def create_report():
         "Reason": ""
     }])
     
-    retirement = retirement.sort_values("Value", ascending=False)
+    retirement = retirement.sort_values(["Value", "RetirementBucket"], ascending=[False, True])
     retirement = pd.concat([retirement, ret_total_row], ignore_index=True)
     retirement.to_csv(RETIREMENT_REPORT_FILE, index=False)
 
@@ -129,24 +158,35 @@ def create_economic_report(df):
     intl_split = (intl_stocks_val / total_stocks_val * 100) if total_stocks_val > 0 else 0
     split_reason = f"Split: {us_split:.1f}% US / {intl_split:.1f}% Int'l"
 
+    target_map = {}
+    if ECONOMIC_TARGET_FILE.exists():
+        economic_targets = load_csv(ECONOMIC_TARGET_FILE)
+        target_map = dict(zip(economic_targets["AssetClass"], economic_targets["TargetPercent"]))
+        target_reason_map = dict(zip(economic_targets["AssetClass"], economic_targets["Reason"].fillna("")))
+    else:
+        target_reason_map = {}
+
     exposure_rows = [
         {
             "AssetClass": "Total Stocks", "Value": total_stocks_val,
             "Current %": (total_stocks_val / portfolio_total * 100),
-            "TargetPercent": 80.0, "Difference %": (total_stocks_val / portfolio_total * 100) - 80.0,
+            "TargetPercent": target_map.get("Total Stocks", 80.0),
+            "Difference %": (total_stocks_val / portfolio_total * 100) - target_map.get("Total Stocks", 80.0),
             "Reason": split_reason
         },
         {
             "AssetClass": "Bonds", "Value": bonds_val,
             "Current %": (bonds_val / portfolio_total * 100),
-            "TargetPercent": 13.0, "Difference %": (bonds_val / portfolio_total * 100) - 13.0,
-            "Reason": "Core fixed-income sequence risk shelter"
+            "TargetPercent": target_map.get("Bonds", 20.0),
+            "Difference %": (bonds_val / portfolio_total * 100) - target_map.get("Bonds", 20.0),
+            "Reason": target_reason_map.get("Bonds", "Core fixed-income sequence risk shelter")
         },
         {
             "AssetClass": "Cash", "Value": cash_val,
             "Current %": (cash_val / portfolio_total * 100),
-            "TargetPercent": 7.0, "Difference %": (cash_val / portfolio_total * 100) - 7.0,
-            "Reason": "Liquid structural early-retirement runway"
+            "TargetPercent": target_map.get("Cash", 7.0),
+            "Difference %": (cash_val / portfolio_total * 100) - target_map.get("Cash", 7.0),
+            "Reason": target_reason_map.get("Cash", "Liquid structural early-retirement runway")
         }
     ]
 
@@ -225,13 +265,18 @@ if __name__ == "__main__":
 
     core_val_subtotal = core_df["Value"].sum()
 
-    # Recalculate values directly matching investment parameters
+    target_map = {}
+    if ECONOMIC_TARGET_FILE.exists():
+        economic_targets = load_csv(ECONOMIC_TARGET_FILE)
+        target_map = dict(zip(economic_targets["AssetClass"], economic_targets["TargetPercent"]))
+
+    # Keep the displayed core split aligned to the canonical target file values instead of re-scaling them.
     core_df["Current %"] = (core_df["Value"] / core_val_subtotal) * 100
-    core_df["TargetPercent"] = (core_df["AssetClass"].map({"Total Stocks": 80.0, "Bonds": 13.0}) / 93.0) * 100
+    core_df["TargetPercent"] = core_df["AssetClass"].map({"Total Stocks": target_map.get("Total Stocks", 80.0), "Bonds": target_map.get("Bonds", 13.0)})
     core_df["Difference %"] = core_df["Current %"] - core_df["TargetPercent"]
 
-    current_equity_pct = float(core_df.loc[core_df["AssetClass"] == "Total Stocks", "Current %"].values)
-    current_bonds_pct = float(core_df.loc[core_df["AssetClass"] == "Bonds", "Current %"].values)
+    current_equity_pct = float(core_df.loc[core_df["AssetClass"] == "Total Stocks", "Current %"].iloc[0]) if not core_df[core_df["AssetClass"] == "Total Stocks"].empty else 0.0
+    current_bonds_pct = float(core_df.loc[core_df["AssetClass"] == "Bonds", "Current %"].iloc[0]) if not core_df[core_df["AssetClass"] == "Bonds"].empty else 0.0
 
     print(
         core_df.to_string(

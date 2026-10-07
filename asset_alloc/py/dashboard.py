@@ -130,8 +130,16 @@ def build_html(detail, retirement, exposure):
     # Recalculate Current % relative to Core Subtotal
     core_exposure["Current %"] = (core_exposure["Value"] / core_val_subtotal) * 100
     
-    # Recalculate TargetPercent relative to Core Target (80% Stocks / 13% Bonds = 93% Total Core)
-    core_exposure["TargetPercent"] = (core_exposure["Category"].map({"Total Stocks": 80.0, "Bonds": 13.0}) / 93.0) * 100
+    # Use the canonical CSV target values instead of re-scaling a 93% subtotal back to 100%. 
+    target_map = {}
+    if (Path(__file__).resolve().parent.parent / "input" / "economic_target.csv").exists():
+        target_df = pd.read_csv(Path(__file__).resolve().parent.parent / "input" / "economic_target.csv")
+        target_map = dict(zip(target_df["AssetClass"], target_df["TargetPercent"]))
+
+    core_exposure["TargetPercent"] = core_exposure["Category"].map({
+        "Total Stocks": target_map.get("Total Stocks", 80.0),
+        "Bonds": target_map.get("Bonds", 20.0),
+    })
     core_exposure["Difference %"] = core_exposure["Current %"] - core_exposure["TargetPercent"]
 
     # Core subtotal variables for the summary row

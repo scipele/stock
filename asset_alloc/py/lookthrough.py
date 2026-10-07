@@ -74,10 +74,15 @@ def create_exposure(df):
     intl_split = (intl_stocks_val / total_stocks_val * 100) if total_stocks_val > 0 else 0
     split_reason = f"Split: {us_split:.1f}% US / {intl_split:.1f}% Int'l"
 
+    target_map = {}
+    if ECONOMIC_TARGET_FILE.exists():
+        target_df = pd.read_csv(ECONOMIC_TARGET_FILE)
+        target_map = dict(zip(target_df["AssetClass"], target_df["TargetPercent"]))
+
     exposure_rows = [
-        {"AssetClass": "Total Stocks", "Value": total_stocks_val, "Current %": (total_stocks_val / total_portfolio_value * 100), "TargetPercent": 80.0, "Difference %": (total_stocks_val / total_portfolio_value * 100) - 80.0, "Reason": split_reason},
-        {"AssetClass": "Bonds", "Value": bonds_val, "Current %": (bonds_val / total_portfolio_value * 100), "TargetPercent": 13.0, "Difference %": (bonds_val / total_portfolio_value * 100) - 13.0, "Reason": "Core fixed-income sequence risk shelter"},
-        {"AssetClass": "Cash", "Value": cash_val, "Current %": (cash_val / total_portfolio_value * 100), "TargetPercent": 7.0, "Difference %": (cash_val / total_portfolio_value * 100) - 7.0, "Reason": "Liquid structural early-retirement runway"}
+        {"AssetClass": "Total Stocks", "Value": total_stocks_val, "Current %": (total_stocks_val / total_portfolio_value * 100), "TargetPercent": target_map.get("Total Stocks", 80.0), "Difference %": (total_stocks_val / total_portfolio_value * 100) - target_map.get("Total Stocks", 80.0), "Reason": split_reason},
+        {"AssetClass": "Bonds", "Value": bonds_val, "Current %": (bonds_val / total_portfolio_value * 100), "TargetPercent": target_map.get("Bonds", 20.0), "Difference %": (bonds_val / total_portfolio_value * 100) - target_map.get("Bonds", 20.0), "Reason": "Core fixed-income sequence risk shelter"},
+        {"AssetClass": "Cash", "Value": cash_val, "Current %": (cash_val / total_portfolio_value * 100), "TargetPercent": target_map.get("Cash", 7.0), "Difference %": (cash_val / total_portfolio_value * 100) - target_map.get("Cash", 7.0), "Reason": "Liquid structural early-retirement runway"}
     ]
     return pd.DataFrame(exposure_rows), total_portfolio_value
 

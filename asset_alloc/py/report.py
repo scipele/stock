@@ -8,6 +8,7 @@ INPUT_DIR = BASE_DIR / "input"
 OUTPUT_DIR = BASE_DIR / "output"
 
 ECONOMIC_FILE = OUTPUT_DIR / "economic_exposure.csv"
+ECONOMIC_TARGET_FILE = INPUT_DIR / "economic_target.csv"
 RETIREMENT_REPORT_FILE = OUTPUT_DIR / "allocation_retirement.csv"
 DETAIL_REPORT_FILE = OUTPUT_DIR / "allocation_detail.csv"
 
@@ -25,23 +26,31 @@ def format_economic_exposure(economic_df):
     intl_pct = (intl_val / total_stocks * 100) if total_stocks > 0 else 0
     split_reason = f"Split: {us_pct:.1f}% US / {intl_pct:.1f}% Int'l"
 
+    target_map = {}
+    if ECONOMIC_TARGET_FILE.exists():
+        target_df = pd.read_csv(ECONOMIC_TARGET_FILE)
+        target_map = dict(zip(target_df["AssetClass"], target_df["TargetPercent"]))
+
     exposure_rows = [
         {
             "Category": "Total Stocks", "Value": total_stocks,
             "Current %": (total_stocks / portfolio_total * 100),
-            "TargetPercent": 80.0, "Difference %": (total_stocks / portfolio_total * 100) - 80.0,
+            "TargetPercent": target_map.get("Total Stocks", 80.0),
+            "Difference %": (total_stocks / portfolio_total * 100) - target_map.get("Total Stocks", 80.0),
             "Reason": split_reason
         },
         {
             "Category": "Bonds", "Value": bonds_val,
             "Current %": (bonds_val / portfolio_total * 100),
-            "TargetPercent": 13.0, "Difference %": (bonds_val / portfolio_total * 100) - 13.0,
+            "TargetPercent": target_map.get("Bonds", 20.0),
+            "Difference %": (bonds_val / portfolio_total * 100) - target_map.get("Bonds", 20.0),
             "Reason": "Core fixed-income sequence risk shelter"
         },
         {
             "Category": "Cash", "Value": cash_val,
             "Current %": (cash_val / portfolio_total * 100),
-            "TargetPercent": 7.0, "Difference %": (cash_val / portfolio_total * 100) - 7.0,
+            "TargetPercent": target_map.get("Cash", 7.0),
+            "Difference %": (cash_val / portfolio_total * 100) - target_map.get("Cash", 7.0),
             "Reason": "Liquid structural early-retirement runway"
         }
     ]
