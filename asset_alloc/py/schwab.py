@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
 from pathlib import Path
+from datetime import datetime
 import csv
+import re
 import pandas as pd
 
 
@@ -12,6 +14,14 @@ OUTPUT_DIR = BASE_DIR / "output"
 DOWNLOAD_DIR = Path("/home/ts/Downloads")
 ASSET_MAP_FILE = INPUT_DIR / "asset_map.csv"
 OUTPUT_FILE = OUTPUT_DIR / "schwab_assets.csv"
+SCHWAB_EXPORT_PATTERN = re.compile(
+    r"^All-Accounts-Positions-(\d{4}-\d{2}-\d{2})-(\d{6})\.csv$"
+)
+ACCOUNT_LABEL_PATTERN = re.compile(r"\.\.\.\d{3}$")
+EXCLUDED_ACCOUNTS = {
+    "Indiv_Hailey ...647",
+    "Indiv_Josh ...792",
+}
 
 
 # --------------------------------------------------
@@ -29,12 +39,29 @@ def find_latest_schwab_file():
             "No Schwab export found"
         )
 
-    latest = max(
-        files,
-        key=lambda x: x.stat().st_mtime
+    dated_files = []
+    for file_path in files:
+        match = SCHWAB_EXPORT_PATTERN.match(file_path.name)
+        if not match:
+            continue
+        file_timestamp = datetime.strptime(
+            f"{match.group(1)}-{match.group(2)}",
+            "%Y-%m-%d-%H%M%S",
+        )
+        dated_files.append((file_path, file_timestamp))
+
+    if not dated_files:
+        raise FileNotFoundError(
+            "No Schwab export found matching naming convention "
+            "All-Accounts-Positions-YYYY-MM-DD-HHMMSS.csv"
+        )
+
+    latest_file, latest_timestamp = max(
+        dated_files,
+        key=lambda item: (item[1], item[0].stat().st_mtime),
     )
 
-    return latest
+    return latest_file, latest_timestamp
 
 
 # --------------------------------------------------
@@ -66,11 +93,12 @@ def clean_money(value):
 
 def load_schwab():
 
-    filename = find_latest_schwab_file()
+    filename, export_timestamp = find_latest_schwab_file()
 
     print()
-    print("Schwab File:")
+    print("Schwab File Selected:")
     print(filename)
+    print(f"Export Timestamp: {export_timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
 
     # Read the file one CSV row at a time.
     # This is necessary because Schwab places
@@ -132,6 +160,8 @@ def load_schwab():
         # Convert rows to dictionaries using
         # the Schwab header.
         records = []
+        active_account = account
+        skip_active_account = active_account in EXCLUDED_ACCOUNTS
 
         for data in data_rows:
 
@@ -144,15 +174,14 @@ def load_schwab():
             if not symbol:
                 continue
 
-            # Ignore Schwab account header rows.
-            if symbol in [
-                "Roth_Tony ...497",
-                "Indiv_Tony ...729",
-                "Indiv_Mary ...873",
-                "Rollover_IRA_Tony ...871",
-                "Roth_Mary ...180",
-                "Joint_Tony_Mary ...456"
-            ]:
+            # Track account delimiters so we can skip selected accounts
+            # while continuing when the file returns to another account.
+            if ACCOUNT_LABEL_PATTERN.search(symbol):
+                active_account = symbol
+                skip_active_account = active_account in EXCLUDED_ACCOUNTS
+                continue
+
+            if skip_active_account:
                 continue
 
 
@@ -168,6 +197,7 @@ def load_schwab():
             record = dict(
                 zip(header, data)
             )
+            record["Account"] = active_account
 
             records.append(record)
 
@@ -185,9 +215,6 @@ def load_schwab():
                 ]
             )
         ]
-
-        # Keep account information.
-        df["Account"] = account
 
         frames.append(df)
 

@@ -55,6 +55,9 @@ Positions classified as `Equity` that are not explicitly mapped in `asset_map.cs
 ## 3. Schwab positions
 
 The program automatically finds and loads the most recent Schwab positions export.
+It selects the newest file matching:
+`All-Accounts-Positions-YYYY-MM-DD-HHMMSS.csv`
+and prints the selected file path and export timestamp to the terminal during execution.
 
 `schwab.py` is responsible for:
 
@@ -65,6 +68,9 @@ The program automatically finds and loads the most recent Schwab positions expor
 5. Assigning default classifications to unmapped Schwab equities.
 6. Setting the source to `Schwab`.
 7. Creating `schwab_assets.csv`.
+
+The parser also excludes kids' accounts from import:
+`Indiv_Hailey ...647` and `Indiv_Josh ...792`.
 
 ---
 

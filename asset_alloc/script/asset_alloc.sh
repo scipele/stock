@@ -18,18 +18,18 @@ echo "======================================"
 echo
 
 echo "1. Processing Schwab account..."
-$PYTHON "$PY_DIR/asset_alloc.py"
+$PYTHON "$PY_DIR/schwab.py"
 
 echo
-echo "3. Combining portfolio Assets..."
+echo "2. Combining portfolio assets..."
 $PYTHON "$PY_DIR/portfolio.py"
 
 echo
-echo "4. Building allocation reports..."
-$PYTHON "$PY_DIR/report.py"
+echo "3. Building allocation reports..."
+$PYTHON "$PY_DIR/asset_alloc.py"
 
 echo
-echo "5. Building HTML dashboard..."
+echo "4. Building HTML dashboard..."
 $PYTHON "$PY_DIR/dashboard.py"
 
 echo
@@ -45,7 +45,7 @@ ls -lh "$OUTPUT_DIR"
 
 
 echo
-echo "6. Opening report..."
+echo "5. Opening report..."
 echo "$OUTPUT_DIR/allocation_report.html"
 
 xdg-open "$OUTPUT_DIR/allocation_report.html" >/dev/null 2>&1 &

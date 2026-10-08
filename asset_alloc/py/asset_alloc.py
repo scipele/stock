@@ -42,6 +42,49 @@ def normalize_bucket_name(value):
         return "Balanced Funds (includes bonds)"
     return label
 
+
+def print_unclassified_positions_warning(assets):
+    category_labels = assets["Category"].fillna("").astype(str).str.strip()
+    unclassified_mask = category_labels.isin(["", "Unclassified"])
+
+    if not unclassified_mask.any():
+        return pd.DataFrame()
+
+    warning_df = assets.loc[unclassified_mask].copy()
+    warning_df["Symbol"] = warning_df["Symbol"].fillna("").astype(str).str.strip().replace("", "-")
+    warning_df["Description"] = warning_df["Description"].fillna("").astype(str).str.strip().replace("", "-")
+    warning_df["Category"] = warning_df["Category"].fillna("Unclassified")
+    warning_df["Value"] = pd.to_numeric(warning_df["Value"], errors="coerce").fillna(0)
+    warning_df = warning_df.sort_values(["Value", "Symbol"], ascending=[False, True])
+
+    return warning_df
+
+
+def print_warning_section(assets):
+    warning_df = print_unclassified_positions_warning(assets)
+
+    columns = ["Symbol", "Description", "Category", "Value"]
+    if "Account" in warning_df.columns:
+        columns.insert(0, "Account")
+
+    print()
+    print("=" * 70)
+    print(" WARNINGS:")
+    print("=" * 70)
+    print()
+
+    if warning_df.empty:
+        print("None")
+        return
+
+    print("Unclassified positions detected:")
+    print(
+        warning_df[columns].to_string(
+            index=False,
+            formatters={"Value": "${:,.2f}".format},
+        )
+    )
+
 # --------------------------------------------------
 # Allocation report Processing
 # --------------------------------------------------
@@ -201,6 +244,7 @@ def create_economic_report(df):
 if __name__ == "__main__":
 
     detail, retirement, economic, total, assets = create_report()
+    print_warning_section(assets)
     
     print()
     print("=" * 70)
