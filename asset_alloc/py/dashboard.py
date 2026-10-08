@@ -7,9 +7,7 @@ OUTPUT_DIR = BASE_DIR / "output"
 INPUT_DIR = BASE_DIR / "input"
 
 DETAIL_FILE = OUTPUT_DIR / "allocation_detail.csv"
-RETIREMENT_FILE = OUTPUT_DIR / "allocation_retirement.csv"
 ALLOC_TARGET_FILE = INPUT_DIR / "alloc_target.csv"
-RETIREMENT_TARGET_FILE = INPUT_DIR / "retirement_target.csv"
 EXPOSURE_FILE = OUTPUT_DIR / "economic_exposure.csv"
 HTML_FILE = OUTPUT_DIR / "allocation_report.html"
 
@@ -53,15 +51,13 @@ def table(df):
 # --------------------------------------------------
 def load_data():
     detail = pd.read_csv(DETAIL_FILE)
-    retirement = pd.read_csv(RETIREMENT_FILE)
     exposure = pd.read_csv(EXPOSURE_FILE)
     alloc_target = pd.read_csv(ALLOC_TARGET_FILE)
-    retirement_target = pd.read_csv(RETIREMENT_TARGET_FILE)
-    return (detail, retirement, exposure, alloc_target, retirement_target)
+    return (detail, exposure, alloc_target)
 # --------------------------------------------------
 # Apply Targets
 # --------------------------------------------------
-def apply_targets(detail, retirement, alloc_target, retirement_target):
+def apply_targets(detail, alloc_target):
     if "Category" in detail.columns and alloc_target is not None:
         if "TargetPercent" in detail.columns:
             detail = detail.drop(columns=["TargetPercent", "Reason", "Difference %"], errors="ignore")
@@ -70,21 +66,7 @@ def apply_targets(detail, retirement, alloc_target, retirement_target):
         detail["Reason"] = detail["Reason"].fillna("")
         detail["Difference %"] = detail["Current %"] - detail["TargetPercent"]
 
-    if "RetirementBucket" in retirement.columns and retirement_target is not None:
-        if "TargetPercent" in retirement.columns:
-            retirement = retirement.drop(columns=["TargetPercent", "Reason", "Difference %"], errors="ignore")
-            
-        retirement = retirement.merge(retirement_target, on="RetirementBucket", how="left")
-        retirement["TargetPercent"] = retirement["TargetPercent"].fillna(0)
-        retirement["Reason"] = retirement["Reason"].fillna("")
-        retirement["Difference %"] = retirement["Current %"] - retirement["TargetPercent"]
-    else:
-        if "TargetPercent" not in retirement.columns:
-            retirement["TargetPercent"] = 0.0
-            retirement["Difference %"] = 0.0
-            retirement["Reason"] = ""
-
-    return detail, retirement
+    return detail
 
 
 def format_exposure(exposure):
@@ -109,15 +91,12 @@ def format_exposure(exposure):
 # --------------------------------------------------
 # HTML Generator
 # --------------------------------------------------
-def build_html(detail, retirement, exposure):
-    total = retirement[retirement["RetirementBucket"] != "Total"]["Value"].sum()
-    
+def build_html(detail, exposure):
     # Filter pre-existing totals before processing fresh metrics
-    retirement = retirement[retirement["RetirementBucket"] != "Total"]
     detail = detail[detail["Category"] != "Total"]
     exposure = exposure[exposure["Category"] != "Total"]
+    total = detail["Value"].sum()
 
-    retirement_with_totals = add_totals(retirement, "RetirementBucket")
     detail_with_totals = add_totals(detail, "Category")
 
     # Isolate Core Risk Investments vs Cash Buffer
@@ -207,7 +186,7 @@ def build_html(detail, retirement, exposure):
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Retirement Portfolio Dashboard</title>
+        <title>Portfolio Dashboard</title>
         <style>
             body {{ font-family: Arial, sans-serif; margin:40px; background:#f4f6f8; }}
             h1 {{ color:#222; }}
@@ -231,7 +210,7 @@ def build_html(detail, retirement, exposure):
         </style>
     </head>
     <body>
-        <h1>Retirement Portfolio Dashboard</h1>
+        <h1>Portfolio Dashboard</h1>
         <div class="card">
             <h2>Portfolio Summary</h2>
             <div class="summary">Total Assets: <b>{money(total)}</b></div>
@@ -239,10 +218,6 @@ def build_html(detail, retirement, exposure):
         <div class="card">
             <h2>Economic Exposure (Core Portfolio Mix Split)</h2>
             {exposure_html}
-        </div>
-        <div class="card">
-            <h2>Retirement Allocation</h2>
-            {table(format_dataframe(retirement_with_totals))}
         </div>
         <div class="card">
             <h2>Detailed Allocation</h2>
@@ -257,11 +232,11 @@ def build_html(detail, retirement, exposure):
 # Main Orchestrator
 # --------------------------------------------------
 def main():
-    (detail, retirement, lookthrough, alloc_target, retirement_target) = load_data()
-    detail, retirement = apply_targets(detail, retirement, alloc_target, retirement_target)
+    (detail, lookthrough, alloc_target) = load_data()
+    detail = apply_targets(detail, alloc_target)
     lookthrough = format_exposure(lookthrough)
     
-    html = build_html(detail, retirement, lookthrough)
+    html = build_html(detail, lookthrough)
     HTML_FILE.write_text(html)
     print()
     print("Created:")

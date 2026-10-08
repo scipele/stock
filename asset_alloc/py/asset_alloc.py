@@ -12,11 +12,9 @@ INPUT_DIR = BASE_DIR / "input"
 OUTPUT_DIR = BASE_DIR / "output"
 ASSET_FILE = OUTPUT_DIR / "all_assets.csv"
 TARGET_FILE = INPUT_DIR / "alloc_target.csv"
-RETIREMENT_TARGET_FILE = INPUT_DIR / "retirement_target.csv"
 
 REPORT_FILE = OUTPUT_DIR / "allocation_report.csv"
 DETAIL_REPORT_FILE = OUTPUT_DIR / "allocation_detail.csv"
-RETIREMENT_REPORT_FILE = OUTPUT_DIR / "allocation_retirement.csv"
 ECONOMIC_FILE = OUTPUT_DIR / "economic_exposure.csv"
 ECONOMIC_TARGET_FILE = INPUT_DIR / "economic_target.csv"
 
@@ -40,6 +38,8 @@ def normalize_bucket_name(value):
         return "Balanced (includes bonds)"
     if label == "Balanced Funds":
         return "Balanced Funds (includes bonds)"
+    if label in {"Short Treasury", "Cash"}:
+        return "Cash Equiv (SWVXX, Short Treasury SGOV)"
     return label
 
 
@@ -98,53 +98,23 @@ def create_report():
     detail = assets.groupby("Category", as_index=False)["Value"].sum()
     targets = load_csv(TARGET_FILE)
     targets["Category"] = targets["Category"].map(normalize_bucket_name)
+    target_categories_in_order = targets["Category"].dropna().drop_duplicates().tolist()
+    category_order_map = {category: idx for idx, category in enumerate(target_categories_in_order)}
     detail = detail.merge(targets[["Category", "TargetPercent", "Reason"]], on="Category", how="outer")
     detail["Value"] = pd.to_numeric(detail["Value"], errors="coerce").fillna(0)
     detail["TargetPercent"] = pd.to_numeric(detail["TargetPercent"], errors="coerce").fillna(0)
     detail["Reason"] = detail["Reason"].fillna("")
     detail["Current %"] = (detail["Value"] / total * 100) if total else 0
     detail["Difference %"] = detail["Current %"] - detail["TargetPercent"]
-    detail = detail.sort_values(["Value", "Category"], ascending=[False, True])
+    detail["__category_order"] = detail["Category"].map(category_order_map)
+    detail = detail.sort_values(["__category_order", "Category"], ascending=[True, True], na_position="last")
+    detail = detail.drop(columns=["__category_order"])
 
     detail = detail[["Category", "Value", "Current %", "TargetPercent", "Difference %", "Reason"]]
     detail.to_csv(DETAIL_REPORT_FILE, index=False)
 
-    # 2. Retirement bucket report
-    retirement = assets.groupby("RetirementBucket", as_index=False)["Value"].sum()
-    retirement["Current %"] = (retirement["Value"] / total * 100) if total else 0
-
-    if RETIREMENT_TARGET_FILE.exists():
-        ret_targets = load_csv(RETIREMENT_TARGET_FILE)
-        ret_targets["RetirementBucket"] = ret_targets["RetirementBucket"].map(normalize_bucket_name)
-        ret_targets = ret_targets.groupby("RetirementBucket", as_index=False).agg(
-            TargetPercent=("TargetPercent", "sum"),
-            Reason=("Reason", lambda s: s.dropna().iloc[0] if s.notna().any() else "")
-        )
-        retirement = retirement.merge(ret_targets, on="RetirementBucket", how="outer")
-        retirement["Value"] = pd.to_numeric(retirement["Value"], errors="coerce").fillna(0)
-        retirement["TargetPercent"] = pd.to_numeric(retirement["TargetPercent"], errors="coerce").fillna(0)
-        retirement["Reason"] = retirement["Reason"].fillna("")
-        retirement["Current %"] = (retirement["Value"] / total * 100) if total else 0
-        retirement["Difference %"] = retirement["Current %"] - retirement["TargetPercent"]
-    else:
-        retirement["TargetPercent"] = 0.0
-        retirement["Reason"] = ""
-        retirement["Difference %"] = retirement["Current %"] - retirement["TargetPercent"]
-
-    # Explicitly calculate a clean Total row
-    ret_total_row = pd.DataFrame([{
-        "RetirementBucket": "Total", "Value": total, "Current %": 100.0,
-        "TargetPercent": retirement["TargetPercent"].sum(),
-        "Difference %": retirement["Current %"].sum() - retirement["TargetPercent"].sum(),
-        "Reason": ""
-    }])
-    
-    retirement = retirement.sort_values(["Value", "RetirementBucket"], ascending=[False, True])
-    retirement = pd.concat([retirement, ret_total_row], ignore_index=True)
-    retirement.to_csv(RETIREMENT_REPORT_FILE, index=False)
-
     economic = create_economic_report(assets)
-    return detail, retirement, economic, total, assets
+    return detail, economic, total, assets
 
 
 def create_economic_report(df):
@@ -243,24 +213,24 @@ def create_economic_report(df):
 # --------------------------------------------------
 if __name__ == "__main__":
 
-    detail, retirement, economic, total, assets = create_report()
+    detail, economic, total, assets = create_report()
     print_warning_section(assets)
-    
+
     print()
     print("=" * 70)
-    print(" Retirement Allocation")
+    print(" Detailed Allocation")
     print("=" * 70)
     print()
 
     print(
-        retirement.to_string(
+        detail.to_string(
             index=False,
             formatters={
-                "Value": "${:,.0f}".format,
+                "Value": "${:,.2f}".format,
                 "Current %": "{:.1f}%".format,
-                "TargetPercent": lambda x: f"{x:.1f}%" if pd.notna(x) and x != 0 else "",
-                "Difference %": lambda x: f"{x:+.1f}%" if pd.notna(x) and x != 0 else ""
-            }
+                "TargetPercent": "{:.1f}%".format,
+                "Difference %": lambda x: f"{x:+.1f}%" if pd.notna(x) else "",
+            },
         )
     )
 
@@ -355,5 +325,4 @@ if __name__ == "__main__":
 
     print("Created:")
     print(DETAIL_REPORT_FILE)
-    print(RETIREMENT_REPORT_FILE)
     print(ECONOMIC_FILE)
