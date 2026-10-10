@@ -45,6 +45,7 @@ def normalize_columns(df):
 
     expected = [
         "Source",
+        "Account",
         "Symbol",
         "Description",
         "Value",
