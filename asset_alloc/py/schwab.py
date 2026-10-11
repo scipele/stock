@@ -12,7 +12,7 @@ INPUT_DIR = BASE_DIR / "input"
 OUTPUT_DIR = BASE_DIR / "output"
 
 DOWNLOAD_DIR = Path("/home/ts/Downloads")
-ASSET_MAP_FILE = INPUT_DIR / "asset_map.csv"
+ASSET_DEFINITIONS_FILE = INPUT_DIR / "asset_definitions.csv"
 OUTPUT_FILE = OUTPUT_DIR / "schwab_assets.csv"
 SCHWAB_EXPORT_PATTERN = re.compile(
     r"^All-Accounts-Positions-(\d{4}-\d{2}-\d{2})-(\d{6})\.csv$"
@@ -248,14 +248,13 @@ def load_schwab():
 
 
 def load_asset_map():
-
-    if not ASSET_MAP_FILE.exists():
+    if not ASSET_DEFINITIONS_FILE.exists():
         raise FileNotFoundError(
-            ASSET_MAP_FILE
+            ASSET_DEFINITIONS_FILE
         )
 
     asset_map = pd.read_csv(
-        ASSET_MAP_FILE,
+        ASSET_DEFINITIONS_FILE,
         dtype={"Symbol": str}
     )
 
@@ -269,8 +268,6 @@ def load_asset_map():
     map_columns = [
         "Symbol",
         "Category",
-        "SubCategory",
-        "SourceType",
         "RetirementBucket",
         "StockPct",
         "BondPct",
@@ -307,8 +304,6 @@ def apply_asset_map(schwab_df, asset_map):
     )
 
     result.loc[equity_unmapped, "Category"] = "Individual Stock"
-    result.loc[equity_unmapped, "SubCategory"] = "Stock"
-    result.loc[equity_unmapped, "SourceType"] = ""
     result.loc[equity_unmapped, "RetirementBucket"] = "Individual Stock"
     result.loc[equity_unmapped, "StockPct"] = 100
     result.loc[equity_unmapped, "BondPct"] = 0
@@ -338,8 +333,6 @@ def apply_asset_map(schwab_df, asset_map):
         "Value",
         "Asset Type",
         "Category",
-        "SubCategory",
-        "SourceType",
         "RetirementBucket",
         "StockPct",
         "BondPct",

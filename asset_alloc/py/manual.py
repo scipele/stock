@@ -16,11 +16,6 @@ def main():
         INPUT_FILE
     )
 
-
-    # Add fields used by lookthrough
-    df["SubCategory"] = df["Category"]
-
-
     df.to_csv(
         OUTPUT_FILE,
         index=False

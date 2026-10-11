@@ -17,19 +17,11 @@ echo " Asset Allocation Report"
 echo "======================================"
 echo
 
-echo "1. Processing Schwab account..."
-$PYTHON "$PY_DIR/schwab.py"
-
-echo
-echo "2. Combining portfolio assets..."
-$PYTHON "$PY_DIR/portfolio.py"
-
-echo
-echo "3. Building allocation reports..."
+echo "1. Building allocation reports..."
 $PYTHON "$PY_DIR/asset_alloc.py"
 
 echo
-echo "4. Building HTML dashboard..."
+echo "2. Building HTML dashboard..."
 $PYTHON "$PY_DIR/dashboard.py"
 
 echo

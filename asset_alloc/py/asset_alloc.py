@@ -14,7 +14,6 @@ ASSET_FILE = OUTPUT_DIR / "all_assets.csv"
 TARGET_FILE = INPUT_DIR / "alloc_target.csv"
 
 REPORT_FILE = OUTPUT_DIR / "allocation_report.csv"
-DETAIL_REPORT_FILE = OUTPUT_DIR / "allocation_detail.csv"
 RETIREMENT_REPORT_FILE = OUTPUT_DIR / "allocation_retirement.csv"
 ECONOMIC_FILE = OUTPUT_DIR / "economic_exposure.csv"
 ECONOMIC_TARGET_FILE = INPUT_DIR / "economic_target.csv"
@@ -44,6 +43,8 @@ def normalize_bucket_name(value):
     if pd.isna(value):
         return value
     label = str(value).strip()
+    if label in {"Cash Equiv (SWVXX_Short Treasury SGOV)", "Treasury Cash"}:
+        return "Cash Equiv (SWVXX, Short Treasury SGOV)"
     if label in {"Bonds", "Fixed Income"}:
         return "Bonds / Fixed Income"
     if label == "Balanced":
@@ -112,6 +113,58 @@ def get_tax_group(account_value):
 def safe_pct(value, total):
     return (value / total * 100.0) if total else 0.0
 
+
+def join_symbols(symbols):
+    cleaned = []
+    for symbol in symbols:
+        if pd.isna(symbol):
+            continue
+        text = str(symbol).strip()
+        if text:
+            cleaned.append(text)
+    return ", ".join(sorted(set(cleaned)))
+
+
+def normalize_target_columns(targets):
+    result = targets.copy()
+    if "Non_Tax_Target_Pct" in result.columns and "Taxable_Target_Pct" in result.columns:
+        result["Non_Tax_Target_Pct"] = pd.to_numeric(result["Non_Tax_Target_Pct"], errors="coerce").fillna(0)
+        result["Taxable_Target_Pct"] = pd.to_numeric(result["Taxable_Target_Pct"], errors="coerce").fillna(0)
+        return result
+
+    if "TargetPercent" in result.columns:
+        legacy_target = pd.to_numeric(result["TargetPercent"], errors="coerce").fillna(0)
+        result["Non_Tax_Target_Pct"] = legacy_target
+        result["Taxable_Target_Pct"] = legacy_target
+        return result
+
+    result["Non_Tax_Target_Pct"] = 0.0
+    result["Taxable_Target_Pct"] = 0.0
+    return result
+
+
+def weighted_combined_target(non_tax_target, taxable_target, non_tax_total, taxable_total):
+    non_tax_target = float(non_tax_target or 0.0)
+    taxable_target = float(taxable_target or 0.0)
+    non_tax_total = float(non_tax_total or 0.0)
+    taxable_total = float(taxable_total or 0.0)
+
+    if non_tax_total <= 0 and taxable_total <= 0:
+        if taxable_target > 0 and non_tax_target <= 0:
+            return taxable_target
+        if non_tax_target > 0 and taxable_target <= 0:
+            return non_tax_target
+        return (non_tax_target + taxable_target) / 2.0 if (non_tax_target or taxable_target) else 0.0
+
+    if non_tax_total <= 0:
+        return taxable_target
+    if taxable_total <= 0:
+        return non_tax_target
+
+    total = non_tax_total + taxable_total
+    return (non_tax_total / total) * non_tax_target + (taxable_total / total) * taxable_target
+
+
 # --------------------------------------------------
 # Allocation report Processing
 # --------------------------------------------------
@@ -121,26 +174,56 @@ def create_report():
     total = assets["Value"].sum()
     assets["Category"] = assets["Category"].map(normalize_bucket_name)
     assets["RetirementBucket"] = assets["RetirementBucket"].map(normalize_bucket_name)
+    cash_pct = (
+        pd.to_numeric(assets["CashPct"], errors="coerce").fillna(0)
+        if "CashPct" in assets.columns
+        else pd.Series(0.0, index=assets.index)
+    )
+    cash_equiv_label = "Cash Equiv (SWVXX, Short Treasury SGOV)"
+    cash_equiv_mask = (assets["Category"] == cash_equiv_label) & (cash_pct > 0)
+    assets.loc[cash_equiv_mask, "RetirementBucket"] = cash_equiv_label
     assets["TaxGroup"] = assets["Account"].map(get_tax_group) if "Account" in assets.columns else 0
 
     # 1. Backward-compatible detailed report
     detail = assets.groupby("Category", as_index=False)["Value"].sum()
-    targets = load_csv(TARGET_FILE)
+    targets = normalize_target_columns(load_csv(TARGET_FILE))
     targets["Category"] = targets["Category"].map(normalize_bucket_name)
     target_categories_in_order = targets["Category"].dropna().drop_duplicates().tolist()
     category_order_map = {category: idx for idx, category in enumerate(target_categories_in_order)}
-    detail = detail.merge(targets[["Category", "TargetPercent", "Reason"]], on="Category", how="outer")
+    detail = detail.merge(targets[["Category", "Non_Tax_Target_Pct", "Taxable_Target_Pct", "Reason"]], on="Category", how="outer")
     detail["Value"] = pd.to_numeric(detail["Value"], errors="coerce").fillna(0)
-    detail["TargetPercent"] = pd.to_numeric(detail["TargetPercent"], errors="coerce").fillna(0)
+    detail["Non_Tax_Target_Pct"] = pd.to_numeric(detail["Non_Tax_Target_Pct"], errors="coerce").fillna(0)
+    detail["Taxable_Target_Pct"] = pd.to_numeric(detail["Taxable_Target_Pct"], errors="coerce").fillna(0)
     detail["Reason"] = detail["Reason"].fillna("")
+
+    category_tax_totals = (
+        assets.assign(Value=pd.to_numeric(assets["Value"], errors="coerce").fillna(0))
+        .groupby(["Category", "TaxGroup"], as_index=False)["Value"]
+        .sum()
+        .pivot(index="Category", columns="TaxGroup", values="Value")
+        .fillna(0)
+    )
+    category_tax_totals.columns = [f"TaxGroup_{col}" for col in category_tax_totals.columns]
+    detail = detail.merge(category_tax_totals.reset_index(), on="Category", how="left")
+    detail["TaxGroup_1"] = pd.to_numeric(detail.get("TaxGroup_1", 0), errors="coerce").fillna(0)
+    detail["TaxGroup_2"] = pd.to_numeric(detail.get("TaxGroup_2", 0), errors="coerce").fillna(0)
+
     detail["Current %"] = (detail["Value"] / total * 100) if total else 0
+    detail["TargetPercent"] = detail.apply(
+        lambda row: weighted_combined_target(
+            row["Non_Tax_Target_Pct"],
+            row["Taxable_Target_Pct"],
+            row.get("TaxGroup_1", 0),
+            row.get("TaxGroup_2", 0),
+        ),
+        axis=1,
+    )
     detail["Difference %"] = detail["Current %"] - detail["TargetPercent"]
     detail["__category_order"] = detail["Category"].map(category_order_map)
     detail = detail.sort_values(["__category_order", "Category"], ascending=[True, True], na_position="last")
     detail = detail.drop(columns=["__category_order"])
 
     detail = detail[["Category", "Value", "Current %", "TargetPercent", "Difference %", "Reason"]]
-    detail.to_csv(DETAIL_REPORT_FILE, index=False)
 
     retirement = create_retirement_report(assets, targets)
     economic = create_economic_report(assets)
@@ -160,15 +243,7 @@ def create_retirement_report(assets, targets):
 
     target_df = targets.copy()
     target_df["Bucket"] = target_df["Category"].map(category_to_bucket).fillna(target_df["Category"])
-    target_df["TargetPercent"] = pd.to_numeric(target_df["TargetPercent"], errors="coerce").fillna(0)
     target_df["Reason"] = target_df["Reason"].fillna("").astype(str).str.strip()
-
-    target_bucket = target_df.groupby("Bucket", as_index=False, sort=False)["TargetPercent"].sum()
-    reason_bucket = (
-        target_df.groupby("Bucket")["Reason"]
-        .apply(lambda s: "; ".join([v for v in s if v]))
-        .to_dict()
-    )
 
     grouped = assets.groupby(["RetirementBucket", "TaxGroup"], as_index=False)["Value"].sum()
     grouped = grouped.rename(columns={"RetirementBucket": "AssetClass"})
@@ -184,36 +259,55 @@ def create_retirement_report(assets, targets):
         if bucket not in ordered_buckets:
             ordered_buckets.append(bucket)
 
-    target_map = dict(zip(target_bucket["Bucket"], target_bucket["TargetPercent"]))
     values_by_group = grouped.pivot_table(index="AssetClass", columns="TaxGroup", values="Value", aggfunc="sum", fill_value=0)
+    symbol_map = (
+        assets[
+            (pd.to_numeric(assets["Value"], errors="coerce").fillna(0) > 0)
+            & assets["RetirementBucket"].notna()
+        ]
+        .groupby("RetirementBucket")["Symbol"]
+        .apply(join_symbols)
+        .to_dict()
+    )
+    reason_bucket = (
+        target_df.groupby("Bucket")["Reason"]
+        .apply(lambda s: "; ".join([v for v in s if v]))
+        .to_dict()
+    )
 
     for bucket in ordered_buckets:
         v1 = float(values_by_group.at[bucket, 1]) if bucket in values_by_group.index and 1 in values_by_group.columns else 0.0
         v2 = float(values_by_group.at[bucket, 2]) if bucket in values_by_group.index and 2 in values_by_group.columns else 0.0
         v3 = float(bucket_totals.loc[bucket_totals["AssetClass"] == bucket, "Value_3"].sum())
-        t = float(target_map.get(bucket, 0.0))
+
+        bucket_targets = target_df[target_df["Bucket"] == bucket].copy()
+        t1 = float(bucket_targets["Non_Tax_Target_Pct"].sum()) if not bucket_targets.empty else 0.0
+        t2 = float(bucket_targets["Taxable_Target_Pct"].sum()) if not bucket_targets.empty else 0.0
+        t3 = weighted_combined_target(t1, t2, v1, v2)
+
         c1 = safe_pct(v1, group_totals.get(1, 0.0))
         c2 = safe_pct(v2, group_totals.get(2, 0.0))
         c3 = safe_pct(v3, total_all)
-        d1 = c1 - t
-        d2 = c2 - t
-        d3 = c3 - t
+        d1 = c1 - t1
+        d2 = c2 - t2
+        d3 = c3 - t3
         rows.append(
             {
                 "AssetClass": bucket,
                 "Value_1": v1,
                 "CurPct_1": c1,
-                "TargetPct_1": t,
+                "TargetPct_1": t1,
                 "Delta_1": d1,
                 "Value_2": v2,
                 "CurPct_2": c2,
-                "TargetPct_2": t,
+                "TargetPct_2": t2,
                 "Delta_2": d2,
                 "Value_3": v3,
                 "CurPct_3": c3,
-                "TargetPct_3": t,
+                "TargetPct_3": t3,
                 "Delta_3": d3,
                 "Reason": reason_bucket.get(bucket, ""),
+                "Symbols": symbol_map.get(bucket, ""),
             }
         )
 
@@ -269,7 +363,7 @@ def create_economic_report(df):
                 "Value_1", "CurPct_1", "TargetPct_1", "Delta_1",
                 "Value_2", "CurPct_2", "TargetPct_2", "Delta_2",
                 "Value_3", "CurPct_3", "TargetPct_3", "Delta_3",
-                "Reason",
+                "Reason", "Symbols",
             ]
         )
         result.to_csv(ECONOMIC_FILE, index=False)
@@ -306,6 +400,17 @@ def create_economic_report(df):
         return f"{us_pct:.1f}% US / {intl_pct:.1f}% Int'l"
 
     classes = ["Total Stocks", "Bonds", "Cash"]
+    symbols_source = df.copy()
+    symbols_source["Value"] = pd.to_numeric(symbols_source["Value"], errors="coerce").fillna(0)
+    symbols_source["StockPct"] = pd.to_numeric(symbols_source["StockPct"], errors="coerce").fillna(0)
+    symbols_source["BondPct"] = pd.to_numeric(symbols_source["BondPct"], errors="coerce").fillna(0)
+    symbols_source["CashPct"] = pd.to_numeric(symbols_source["CashPct"], errors="coerce").fillna(0)
+    symbols_source = symbols_source[symbols_source["Value"] > 0]
+    economic_symbol_map = {
+        "Total Stocks": join_symbols(symbols_source.loc[symbols_source["StockPct"] > 0, "Symbol"]),
+        "Bonds": join_symbols(symbols_source.loc[symbols_source["BondPct"] > 0, "Symbol"]),
+        "Cash": join_symbols(symbols_source.loc[symbols_source["CashPct"] > 0, "Symbol"]),
+    }
     rows_out = []
     for asset_class in classes:
         if asset_class == "Total Stocks":
@@ -357,6 +462,7 @@ def create_economic_report(df):
                 "TargetPct_3": target_pct,
                 "Delta_3": cur3 - target_pct,
                 "Reason": reason,
+                "Symbols": economic_symbol_map.get(asset_class, ""),
             }
         )
 
@@ -482,6 +588,5 @@ if __name__ == "__main__":
     print()
 
     print("Created:")
-    print(DETAIL_REPORT_FILE)
     print(RETIREMENT_REPORT_FILE)
     print(ECONOMIC_FILE)
