@@ -283,7 +283,12 @@ def create_retirement_report(assets, targets):
         bucket_targets = target_df[target_df["Bucket"] == bucket].copy()
         t1 = float(bucket_targets["Non_Tax_Target_Pct"].sum()) if not bucket_targets.empty else 0.0
         t2 = float(bucket_targets["Taxable_Target_Pct"].sum()) if not bucket_targets.empty else 0.0
-        t3 = weighted_combined_target(t1, t2, v1, v2)
+        #t3 = weighted_combined_target(t1, t2, v1, v2)
+        t3 = weighted_combined_target(
+            t1, t2,
+            group_totals.get(1, 0.0),   # overall non-tax total
+            group_totals.get(2, 0.0),   # overall taxable total
+        )
 
         c1 = safe_pct(v1, group_totals.get(1, 0.0))
         c2 = safe_pct(v2, group_totals.get(2, 0.0))
