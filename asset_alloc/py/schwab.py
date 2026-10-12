@@ -13,7 +13,7 @@ OUTPUT_DIR = BASE_DIR / "output"
 
 DOWNLOAD_DIR = Path("/home/ts/Downloads")
 ASSET_DEFINITIONS_FILE = INPUT_DIR / "asset_definitions.csv"
-OUTPUT_FILE = OUTPUT_DIR / "schwab_assets.csv"
+OUTPUT_FILE = OUTPUT_DIR / "all_assets.csv"
 SCHWAB_EXPORT_PATTERN = re.compile(
     r"^All-Accounts-Positions-(\d{4}-\d{2}-\d{2})-(\d{6})\.csv$"
 )

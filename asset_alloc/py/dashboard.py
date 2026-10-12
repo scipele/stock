@@ -304,59 +304,92 @@ def format_retirement(retirement):
 # --------------------------------------------------
 # HTML Generator
 # --------------------------------------------------
+import pandas as pd
 def build_html(exposure, retirement):
     if "AssetClass" in exposure.columns:
         exposure = exposure[~exposure["AssetClass"].isin(["Total", "Total Portfolio"])].copy()
-        non_cash_mask = exposure["AssetClass"] != "Cash"
-        for suffix in ("1", "2", "3"):
-            value_col = f"Value_{suffix}"
-            cur_col = f"CurPct_{suffix}"
-            target_col = f"TargetPct_{suffix}"
-            delta_col = f"Delta_{suffix}"
-            balance_col = f"Balance_{suffix}"
 
-            if value_col not in exposure.columns:
-                continue
+    non_cash_mask = exposure["AssetClass"] != "Cash"
 
-            non_cash_values = pd.to_numeric(exposure.loc[non_cash_mask, value_col], errors="coerce").fillna(0)
-            core_total = non_cash_values.sum()
+    for suffix in ("1", "2", "3"):
+        value_col = f"Value_{suffix}"
+        cur_col = f"CurPct_{suffix}"
+        target_col = f"TargetPct_{suffix}"
+        delta_col = f"Delta_{suffix}"
+        balance_col = f"Balance_{suffix}"
 
-            if cur_col in exposure.columns:
-                if core_total > 0:
-                    exposure.loc[non_cash_mask, cur_col] = (non_cash_values / core_total) * 100.0
-                else:
-                    exposure.loc[non_cash_mask, cur_col] = 0.0
+        if value_col not in exposure.columns:
+            continue
 
-            if delta_col in exposure.columns and cur_col in exposure.columns and target_col in exposure.columns:
-                cur_vals = pd.to_numeric(exposure.loc[non_cash_mask, cur_col], errors="coerce").fillna(0)
-                target_vals = pd.to_numeric(exposure.loc[non_cash_mask, target_col], errors="coerce").fillna(0)
-                exposure.loc[non_cash_mask, delta_col] = cur_vals - target_vals
-            if balance_col in exposure.columns and target_col in exposure.columns:
-                values = pd.to_numeric(exposure.loc[non_cash_mask, value_col], errors="coerce").fillna(0)
-                targets = pd.to_numeric(exposure.loc[non_cash_mask, target_col], errors="coerce").fillna(0)
-                target_values = (targets / 100.0) * core_total if core_total > 0 else 0.0
-                exposure.loc[non_cash_mask, balance_col] = target_values - values
+        non_cash_values = pd.to_numeric(exposure.loc[non_cash_mask, value_col], errors="coerce").fillna(0)
+        core_total = non_cash_values.sum()
 
-        exposure_total_source = exposure.copy()
-        cash_rows = exposure[exposure["AssetClass"] == "Cash"].copy()
-        non_cash_rows = exposure[exposure["AssetClass"] != "Cash"].copy()
+        if cur_col in exposure.columns:
+            if core_total > 0:
+                exposure.loc[non_cash_mask, cur_col] = (non_cash_values / core_total) * 100.0
+            else:
+                exposure.loc[non_cash_mask, cur_col] = 0.0
 
-        display_rows = [non_cash_rows]
-        core_total_row = add_core_total_row(exposure, "AssetClass", "Core Total (Stocks + Bonds)")
-        display_rows.append(core_total_row)
-        if not cash_rows.empty:
-            separator = pd.DataFrame([{col: "" for col in exposure.columns}])
-            separator.iloc[0, 0] = "__BREAK__"
-            display_rows.extend([separator, cash_rows])
+        if delta_col in exposure.columns and cur_col in exposure.columns and target_col in exposure.columns:
+            cur_vals = pd.to_numeric(exposure.loc[non_cash_mask, cur_col], errors="coerce").fillna(0)
+            target_vals = pd.to_numeric(exposure.loc[non_cash_mask, target_col], errors="coerce").fillna(0)
+            exposure.loc[non_cash_mask, delta_col] = cur_vals - target_vals
 
-        exposure = pd.concat(display_rows, ignore_index=True)
-        exposure = add_totals_row(exposure_total_source, "AssetClass", "Total Portfolio").pipe(
-            lambda totals_df: pd.concat([exposure, totals_df.tail(1)], ignore_index=True)
-        )
+        if balance_col in exposure.columns and target_col in exposure.columns:
+            values = pd.to_numeric(exposure.loc[non_cash_mask, value_col], errors="coerce").fillna(0)
+            targets = pd.to_numeric(exposure.loc[non_cash_mask, target_col], errors="coerce").fillna(0)
+            target_values = (targets / 100.0) * core_total if core_total > 0 else 0.0
+            exposure.loc[non_cash_mask, balance_col] = target_values - values
+
+    exposure_total_source = exposure.copy()
+    cash_rows = exposure[exposure["AssetClass"] == "Cash"].copy()
+    non_cash_rows = exposure[exposure["AssetClass"] != "Cash"].copy()
+    
+    display_rows = [non_cash_rows]
+    
+    # 1. Generate Core Total Row and override Target Pct columns with actual sums
+    core_total_row = add_core_total_row(exposure, "AssetClass", "Core Total (Stocks + Bonds)")
+    for suffix in ("1", "2", "3"):
+        target_col = f"TargetPct_{suffix}"
+        if target_col in exposure.columns:
+            core_target_sum = pd.to_numeric(non_cash_rows[target_col], errors="coerce").fillna(0).sum()
+            core_total_row[target_col] = core_target_sum
+            
+    display_rows.append(core_total_row)
+
+    if not cash_rows.empty:
+        separator = pd.DataFrame([{col: "" for col in exposure.columns}])
+        separator.iloc[0, 0] = "__BREAK__"
+        display_rows.extend([separator, cash_rows])
+
+    exposure = pd.concat(display_rows, ignore_index=True)
+    
+    # 2. Generate Grand Total Row and override Target Pct columns with actual sums
+    totals_df = add_totals_row(exposure_total_source, "AssetClass", "Total Portfolio")
+    grand_total_row = totals_df.tail(1).copy()
+    
+    for suffix in ("1", "2", "3"):
+        target_col = f"TargetPct_{suffix}"
+        if target_col in exposure.columns:
+            total_target_sum = pd.to_numeric(exposure_total_source[target_col], errors="coerce").fillna(0).sum()
+            grand_total_row[target_col] = total_target_sum
+
+    exposure = pd.concat([exposure, grand_total_row], ignore_index=True)
 
     if "AssetClass" in retirement.columns:
         retirement = retirement[~retirement["AssetClass"].isin(["Total", "Total Portfolio"])].copy()
-        retirement = add_totals_row(retirement, "AssetClass", "Total Portfolio")
+    
+    # 3. Handle retirement totals dynamically if it contains Target Pct columns
+    retirement_totals = add_totals_row(retirement, "AssetClass", "Total Portfolio")
+    retirement_grand_total = retirement_totals.tail(1).copy()
+    
+    for suffix in ("1", "2", "3"):
+        target_col = f"TargetPct_{suffix}"
+        if target_col in retirement.columns:
+            ret_target_sum = pd.to_numeric(retirement[target_col], errors="coerce").fillna(0).sum()
+            retirement_grand_total[target_col] = ret_target_sum
+            
+    retirement = pd.concat([retirement, retirement_grand_total], ignore_index=True)
 
     exposure = swap_tax_group_columns(exposure)
     retirement = swap_tax_group_columns(retirement)
@@ -368,44 +401,42 @@ def build_html(exposure, retirement):
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Portfolio Dashboard</title>
-        <style>
-            body {{ font-family: Arial, sans-serif; margin:40px; background:#f4f6f8; }}
-            h1 {{ color:#222; }}
-            .card {{ background:white; padding:20px; margin-bottom:25px; border-radius:10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }}
-            .table-wrap {{ overflow-x: auto; }}
-            .table {{ border-collapse: collapse; width: 100%; min-width: 1540px; table-layout: fixed; }}
-            .table th, .table td {{ width: 7.14%; padding: 10px 8px; border-bottom: 1px solid #ddd; text-align: right; vertical-align: top; white-space: normal; overflow-wrap: anywhere; }}
-            .table th:first-child, .table td:first-child {{ width: 5.5%; text-align: left; }}
-            .table th:last-child, .table td:last-child {{ width: 5.2%; text-align: left; }}
-            .table th:nth-child(17), .table td:nth-child(17) {{ width: 5.2%; text-align: left; }}
-            .table th {{ background:#333; color:white; padding:10px; }}
-            .table thead tr.group-header th {{ text-align: center; }}
-
-            .table th:first-child, .table td:first-child {{ border-left: 4px solid #475569; border-right: 4px solid #475569; }}
-            .table th:nth-child(6), .table td:nth-child(6) {{ border-right: 4px solid #475569; }}
-            .table th:nth-child(11), .table td:nth-child(11) {{ border-right: 4px solid #475569; }}
-            .table th:nth-child(16), .table td:nth-child(16) {{ border-right: 4px solid #475569; }}
-            .table th:last-child, .table td:last-child {{ border-right: 4px solid #475569; }}
-            .table td.delta-red {{ color: #b91c1c; font-weight: 700; }}
-            .table td.delta-green {{ color: #15803d; font-weight: 700; }}
-            .below-line-row td {{ border-top: 3px solid #111; }}
-            
-            .table tr:last-child, .grand-total-row {{ font-weight: bold; background: #cbd5e1 !important; }}
-            .subtotal-row {{ font-weight: bold; background: #f1f5f9; border-top: 2px solid #333; }}
-            .break-row td {{ border: none !important; height: 8px; padding: 0; background: #fff; }}
-        </style>
+    <title>Portfolio Dashboard</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin:40px; background:#f4f6f8; }}
+        h1 {{ color:#222; }}
+        .card {{ background:white; padding:20px; margin-bottom:25px; border-radius:10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }}
+        .table-wrap {{ overflow-x: auto; }}
+        .table {{ border-collapse: collapse; width: 100%; min-width: 1540px; table-layout: fixed; }}
+        .table th, .table td {{ width: 7.14%; padding: 10px 8px; border-bottom: 1px solid #ddd; text-align: right; vertical-align: top; white-space: normal; overflow-wrap: anywhere; }}
+        .table th:first-child, .table td:first-child {{ width: 5.5%; text-align: left; }}
+        .table th:last-child, .table td:last-child {{ width: 5.2%; text-align: left; }}
+        .table th:nth-child(17), .table td:nth-child(17) {{ width: 5.2%; text-align: left; }}
+        .table th {{ background:#333; color:white; padding:10px; }}
+        .table thead tr.group-header th {{ text-align: center; }}
+        .table th:first-child, .table td:first-child {{ border-left: 4px solid #475569; border-right: 4px solid #475569; }}
+        .table th:nth-child(6), .table td:nth-child(6) {{ border-right: 4px solid #475569; }}
+        .table th:nth-child(11), .table td:nth-child(11) {{ border-right: 4px solid #475569; }}
+        .table th:nth-child(16), .table td:nth-child(16) {{ border-right: 4px solid #475569; }}
+        .table th:last-child, .table td:last-child {{ border-right: 4px solid #475569; }}
+        .table td.delta-red {{ color: #b91c1c; font-weight: 700; }}
+        .table td.delta-green {{ color: #15803d; font-weight: 700; }}
+        .below-line-row td {{ border-top: 3px solid #111; }}
+        .table tr:last-child, .grand-total-row {{ font-weight: bold; background: #cbd5e1 !important; }}
+        .subtotal-row {{ font-weight: bold; background: #f1f5f9; border-top: 2px solid #333; }}
+        .break-row td {{ border: none !important; height: 8px; padding: 0; background: #fff; }}
+    </style>
     </head>
     <body>
-        <h1>Portfolio Dashboard</h1>
-        <div class="card">
-            <h2>Economic Exposure</h2>
-            {exposure_html}
-        </div>
-        <div class="card">
-            <h2>Allocation Retirement</h2>
-            {retirement_html}
-        </div>
+    <h1>Portfolio Dashboard</h1>
+    <div class="card">
+        <h2>Economic Exposure</h2>
+        {exposure_html}
+    </div>
+    <div class="card">
+        <h2>Allocation Retirement</h2>
+        {retirement_html}
+    </div>
     </body>
     </html>
     """
