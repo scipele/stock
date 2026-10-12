@@ -2,7 +2,7 @@
 
 import csv
 import html
-from collections import defaultdict
+from collections import defaultdict, deque
 from datetime import datetime, timedelta
 import re
 import sys
@@ -74,6 +74,50 @@ def parse_money(value):
     return 0.0
 
 
+def is_etf_or_fund_description(description):
+    text = str(description or "").upper()
+    if re.search(r"\bETF\b", text):
+        return True
+    return (
+        re.search(r"\bFUND\b", text) is not None
+        or "MONEY INVESTOR" in text
+        or "MONEY MARKET" in text
+        or "TREASURY MONEY" in text
+        or "INDEX FUND" in text
+        or "MUTUAL FUND" in text
+    )
+
+
+def is_probable_cusip_symbol(symbol):
+    sym = str(symbol or "").strip().upper()
+    return len(sym) == 9 and sym[0].isdigit() and re.fullmatch(r"[0-9A-Z]{9}", sym) is not None
+
+
+def is_individual_stock(symbol, description):
+    sym = str(symbol or "").strip().upper()
+    if not sym:
+        return False
+    # Schwab cash-like mutual fund symbols are commonly 5 letters ending in X (e.g., SWVXX/SNSXX).
+    if len(sym) == 5 and sym.endswith("X"):
+        return False
+    if is_probable_cusip_symbol(sym):
+        return False
+    if is_etf_or_fund_description(description):
+        return False
+    return True
+
+
+EPSILON = 1e-9
+
+
+def is_positive_journaled_share_transfer(record):
+    return record["action"] == "JOURNALED SHARES" and record["qty"] > EPSILON
+
+
+def is_negative_journaled_share_transfer(record):
+    return record["action"] == "JOURNALED SHARES" and record["qty"] < -EPSILON
+
+
 def load_transaction_records(transactions_file):
     if not transactions_file.exists():
         return []
@@ -88,12 +132,19 @@ def load_transaction_records(transactions_file):
 
             action = str(row.get("Action", "")).strip().upper()
             symbol = str(row.get("Symbol", "")).strip()
+            description = str(row.get("Description", "")).strip()
             account = str(row.get("AccountId", "")).strip()
-            qty = abs(parse_money(row.get("Quantity", "")))
+            raw_qty = parse_money(row.get("Quantity", ""))
+            if action in {"BUY", "SELL"}:
+                qty = abs(raw_qty)
+            else:
+                qty = raw_qty
             price = abs(parse_money(row.get("Price", "")))
             fees = abs(parse_money(row.get("Fees & Comm", "")))
 
-            if not symbol or qty <= 0:
+            if not symbol or abs(qty) <= EPSILON:
+                continue
+            if not is_individual_stock(symbol, description):
                 continue
 
             records.append(
@@ -101,6 +152,7 @@ def load_transaction_records(transactions_file):
                     "date": tx_date,
                     "action": action,
                     "symbol": symbol,
+                    "description": description,
                     "account": account,
                     "qty": qty,
                     "price": price,
@@ -109,14 +161,16 @@ def load_transaction_records(transactions_file):
                 }
             )
 
-    def action_priority(action):
-        if action == "BUY":
+    def action_priority(record):
+        if record["action"] == "BUY":
             return 0
-        if action == "SELL":
+        if is_positive_journaled_share_transfer(record):
             return 1
-        return 2
+        if record["action"] == "SELL":
+            return 2
+        return 1
 
-    records.sort(key=lambda r: (r["date"], action_priority(r["action"]), r["order"]))
+    records.sort(key=lambda r: (r["date"], action_priority(r), r["order"]))
     return records
 
 
@@ -159,10 +213,13 @@ def load_current_positions_cost_basis(positions_file):
                 continue
 
             symbol = first
+            desc_text = cells[header.get("Description", -1)] if header.get("Description", -1) < len(cells) else ""
             qty_text = cells[header.get("Qty (Quantity)", -1)] if header.get("Qty (Quantity)", -1) < len(cells) else ""
             cost_text = cells[header.get("Cost/Share", -1)] if header.get("Cost/Share", -1) < len(cells) else ""
             asset_text = cells[header.get("Asset Type", -1)] if header.get("Asset Type", -1) < len(cells) else ""
             if asset_text != "Equity":
+                continue
+            if not is_individual_stock(symbol, desc_text):
                 continue
             qty = abs(parse_money(qty_text))
             cost = abs(parse_money(cost_text))
@@ -347,6 +404,7 @@ def compute_realized_metrics(transactions_file, start_date, end_date):
         return None
 
     lots = defaultdict(list)
+    pending_transfers_by_symbol = defaultdict(deque)
     realized_gain = 0.0
     open_cost_basis = 0.0
     end_of_day_cost_basis = {}
@@ -362,23 +420,47 @@ def compute_realized_metrics(transactions_file, start_date, end_date):
             tx = records[idx]
             lot_key = f"{tx['account']}|{tx['symbol']}" if tx["account"] else tx["symbol"]
 
-            if tx["action"] == "BUY":
-                lots[lot_key].append({"qty": tx["qty"], "price": tx["price"]})
-                open_cost_basis += tx["qty"] * tx["price"]
+            if tx["action"] == "BUY" or is_positive_journaled_share_transfer(tx):
+                if is_positive_journaled_share_transfer(tx):
+                    pending = pending_transfers_by_symbol[tx["symbol"]]
+                    remaining = tx["qty"]
+
+                    while remaining > EPSILON and pending:
+                        transfer_lot = pending.popleft()
+                        matched = min(remaining, transfer_lot["qty"])
+                        lots[lot_key].append(
+                            {"qty": matched, "price": transfer_lot["price"]}
+                        )
+                        open_cost_basis += matched * transfer_lot["price"]
+
+                        if transfer_lot["qty"] > matched + EPSILON:
+                            transfer_lot["qty"] -= matched
+                            pending.appendleft(transfer_lot)
+
+                        remaining -= matched
+
+                    if remaining > EPSILON:
+                        lots[lot_key].append({"qty": remaining, "price": tx["price"]})
+                        open_cost_basis += remaining * tx["price"]
+                else:
+                    lots[lot_key].append({"qty": tx["qty"], "price": tx["price"]})
+                    open_cost_basis += tx["qty"] * tx["price"]
+
                 if start_date <= tx["date"] <= end_date:
                     daily_buy_notional[tx["date"]] += tx["qty"] * tx["price"]
                 idx += 1
                 continue
 
-            if tx["action"] != "SELL":
+            if tx["action"] != "SELL" and not is_negative_journaled_share_transfer(tx):
                 idx += 1
                 continue
 
-            if start_date <= tx["date"] <= end_date:
+            is_transfer_out = is_negative_journaled_share_transfer(tx)
+            if tx["action"] == "SELL" and start_date <= tx["date"] <= end_date:
                 daily_sell_notional[tx["date"]] += tx["qty"] * tx["price"]
                 sell_transactions_count += 1
 
-            remaining = tx["qty"]
+            remaining = abs(tx["qty"])
             lot_idx = 0
             account_lots = lots[lot_key]
 
@@ -389,7 +471,11 @@ def compute_realized_metrics(transactions_file, start_date, end_date):
                     continue
 
                 matched = min(remaining, lot["qty"])
-                if start_date <= tx["date"] <= end_date:
+                if is_transfer_out:
+                    pending_transfers_by_symbol[tx["symbol"]].append(
+                        {"qty": matched, "price": lot["price"]}
+                    )
+                elif start_date <= tx["date"] <= end_date:
                     fee_share = tx["fees"] * (matched / tx["qty"]) if tx["qty"] > 1e-9 else 0.0
                     realized_gain += matched * (tx["price"] - lot["price"]) - fee_share
 
@@ -422,17 +508,10 @@ def compute_realized_metrics(transactions_file, start_date, end_date):
     avg_all_holdings_cost_basis = total_cost_basis / days_in_period if days_in_period > 0 else 0.0
 
     trade_days = sorted(set(daily_buy_notional.keys()) | set(daily_sell_notional.keys()))
-    if trade_days:
-        gross_turnover_total = 0.0
-        for day in trade_days:
-            gross_turnover_total += daily_buy_notional[day] + daily_sell_notional[day]
-        avg_trading_capital = gross_turnover_total / len(trade_days)
-    else:
-        avg_trading_capital = 0.0
+    avg_trading_capital = avg_all_holdings_cost_basis
 
-    # Primary denominator: validated daily trading deployment, which aligns with
-    # a rotating capital sleeve. Keep all-holdings basis as reference.
-    avg_invested_capital = avg_trading_capital if avg_trading_capital > 0 else avg_all_holdings_cost_basis
+    # Use transfer-aware, day-by-day tied-up cost basis as the primary capital denominator.
+    avg_invested_capital = avg_all_holdings_cost_basis
 
     if avg_invested_capital <= 0:
         return None
@@ -1036,7 +1115,7 @@ page = f"""<!DOCTYPE html>
             <div class="summary-title">Summary Statistics</div>
             <div class="period-total">Total Gain for Period Entered &nbsp; {fmt_total(total_gain)}</div>
             <div class="period-metrics">
-                {f"Realized Return (validated trading-capital basis): {fmt_percent(realized_metrics['period_return'])}<br/>CAGR (annualized over {realized_metrics['period_days']} calendar days): {fmt_percent(realized_metrics['cagr'])}<br/>Average Trading Capital (daily gross buy+sell notional): {fmt_total(realized_metrics['avg_trading_capital'])}<br/>Completed Transactions (sell count): {realized_metrics['sell_transactions_count']}<br/>Trading Days in Period: {realized_metrics['trade_days']}<br/>Account/Symbol Books Included: {realized_metrics['all_keys']}<br/>{voo_summary_text}" if realized_metrics and realized_metrics['cagr'] is not None else "CAGR unavailable for this period."}
+                {f"Realized Return (validated trading-capital basis): {fmt_percent(realized_metrics['period_return'])}<br/>CAGR (annualized over {realized_metrics['period_days']} calendar days): {fmt_percent(realized_metrics['cagr'])}<br/>Average Trading Capital (daily tied-up cost basis): {fmt_total(realized_metrics['avg_trading_capital'])}<br/>Completed Transactions (sell count): {realized_metrics['sell_transactions_count']}<br/>Trading Days in Period: {realized_metrics['trade_days']}<br/>Account/Symbol Books Included: {realized_metrics['all_keys']}<br/>{voo_summary_text}" if realized_metrics and realized_metrics['cagr'] is not None else "CAGR unavailable for this period."}
             </div>
         </div>
     <div class=\"chart-block\">

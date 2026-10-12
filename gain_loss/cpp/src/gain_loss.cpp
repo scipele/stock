@@ -266,6 +266,43 @@ bool contains(const std::string& value, const std::string& search)
     return value.find(search) != std::string::npos;
 }
 
+std::string to_upper_copy(std::string value)
+{
+    std::transform(value.begin(), value.end(), value.begin(),
+        [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
+    return value;
+}
+
+bool is_probable_cusip_symbol(const std::string& symbol)
+{
+    if (symbol.size() != 9 || !std::isdigit(static_cast<unsigned char>(symbol[0])))
+        return false;
+
+    return std::all_of(symbol.begin(), symbol.end(),
+        [](unsigned char ch) { return std::isalnum(ch); });
+}
+
+bool is_etf_or_fund_description(const std::string& description)
+{
+    std::string text = to_upper_copy(description);
+    return contains(text, "ETF") || contains(text, "INDEX FUND") || contains(text, "MUTUAL FUND");
+}
+
+bool is_individual_stock(const std::string& symbol, const std::string& description)
+{
+    std::string cleaned_symbol = trim(symbol);
+    if (cleaned_symbol.empty())
+        return false;
+
+    if (is_probable_cusip_symbol(cleaned_symbol))
+        return false;
+
+    if (is_etf_or_fund_description(description))
+        return false;
+
+    return true;
+}
+
 fs::path find_newest_positions_file()
 {
     fs::path newest;
@@ -443,6 +480,7 @@ std::vector<Transaction> read_transactions(const fs::path& filename)
     int account_col = -1;
     int action_col = -1;
     int symbol_col = -1;
+    int desc_col = -1;
     int qty_col = -1;
     int price_col = -1;
     int fees_col = -1;
@@ -458,6 +496,8 @@ std::vector<Transaction> read_transactions(const fs::path& filename)
             action_col = static_cast<int>(i);
         else if (h == "Symbol")
             symbol_col = static_cast<int>(i);
+        else if (h == "Description")
+            desc_col = static_cast<int>(i);
         else if (h == "Quantity")
             qty_col = static_cast<int>(i);
         else if (h == "Price")
@@ -492,6 +532,9 @@ std::vector<Transaction> read_transactions(const fs::path& filename)
         t.action = remove_quotes(fields[action_col]);
         std::transform(t.action.begin(), t.action.end(), t.action.begin(), [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
         t.symbol = remove_quotes(fields[symbol_col]);
+        if (desc_col >= 0 && desc_col < static_cast<int>(fields.size()))
+            t.description = remove_quotes(fields[desc_col]);
+
         double raw_quantity = to_double(fields[qty_col]);
         if (t.action == "BUY" || t.action == "SELL")
             t.quantity = std::fabs(raw_quantity);
@@ -573,6 +616,8 @@ std::map<std::string, std::map<std::string, DailySymbolSummary>> compute_daily_g
     for (const auto& tx : sorted)
     {
         if (!tx.date.valid())
+            continue;
+        if (!is_individual_stock(tx.symbol, tx.description))
             continue;
 
         std::string lot_key = tx.account_id.empty() ? tx.symbol : tx.account_id + "|" + tx.symbol;
