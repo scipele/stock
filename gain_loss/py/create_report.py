@@ -314,29 +314,118 @@ def build_daily_price_lookup(symbols, start_date, end_date):
 
 
 def build_unrealized_market_value_series(records, start_date, end_date):
-    positions = load_current_positions_cost_basis(OUTPUT_DIR / "positions.csv")
-    if not positions:
-        return [], {}
+    """
+    Reconstruct open lots day-by-day from the full transaction history, then
+    mark-to-market each open lot using that calendar day's closing price.
 
-    symbols = sorted({key.split("|", 1)[1] if "|" in key else key for key in positions})
+    Unrealized gain/loss on day D = sum over open lots of
+        qty * (close_D - lot_cost).
+    Only negative (loss) contributions are accumulated so the series remains
+    an unrealized-loss measure consistent with the existing chart labels.
+    Holdings that did not exist on a given historical day are excluded.
+    """
+    if not records:
+        days = (end_date - start_date).days + 1
+        return [0.0] * max(days, 0), {}
+
+    # Symbols that appear in individual-stock transactions (already filtered).
+    symbols = sorted({r["symbol"] for r in records})
+    if not symbols:
+        days = (end_date - start_date).days + 1
+        return [0.0] * max(days, 0), {}
+
+    # Need prices for the report window so every open lot can be valued
+    # from the first day of the report period onward.
     price_lookup = build_daily_price_lookup(symbols, start_date, end_date)
 
+    lots = defaultdict(list)  # lot_key -> [{"qty", "price"}, ...]
+    pending_transfers_by_symbol = defaultdict(deque)
+
+    # Index records by date for sequential processing.
+    records_by_date = defaultdict(list)
+    for r in records:
+        records_by_date[r["date"]].append(r)
+
+    all_txn_dates = sorted(records_by_date.keys())
+    if not all_txn_dates:
+        days = (end_date - start_date).days + 1
+        return [0.0] * max(days, 0), {}
+
     series = []
-    day = start_date
-    while day <= end_date:
-        total_unrealized = 0.0
-        for key, pos in positions.items():
-            symbol = key.split("|", 1)[1] if "|" in key else key
-            current_price = price_lookup.get(symbol, {}).get(day)
-            if current_price is None:
+    # Process every calendar day from the earliest transaction through end_date
+    # so lots that opened before the report window are correctly carried in.
+    walk_day = all_txn_dates[0]
+    while walk_day <= end_date:
+        # Apply all transactions that settled on this calendar day.
+        for tx in records_by_date.get(walk_day, []):
+            lot_key = f"{tx['account']}|{tx['symbol']}" if tx["account"] else tx["symbol"]
+
+            if tx["action"] == "BUY" or is_positive_journaled_share_transfer(tx):
+                if is_positive_journaled_share_transfer(tx):
+                    pending = pending_transfers_by_symbol[tx["symbol"]]
+                    remaining = tx["qty"]
+                    while remaining > EPSILON and pending:
+                        transfer_lot = pending.popleft()
+                        matched = min(remaining, transfer_lot["qty"])
+                        lots[lot_key].append(
+                            {"qty": matched, "price": transfer_lot["price"]}
+                        )
+                        if transfer_lot["qty"] > matched + EPSILON:
+                            transfer_lot["qty"] -= matched
+                            pending.appendleft(transfer_lot)
+                        remaining -= matched
+                    if remaining > EPSILON:
+                        lots[lot_key].append({"qty": remaining, "price": tx["price"]})
+                else:
+                    lots[lot_key].append({"qty": tx["qty"], "price": tx["price"]})
                 continue
 
-            lot_gain_loss = pos["qty"] * (current_price - pos["cost"])
-            if lot_gain_loss < 0.0:
-                total_unrealized += lot_gain_loss
+            if tx["action"] != "SELL" and not is_negative_journaled_share_transfer(tx):
+                continue
 
-        series.append(round(total_unrealized, 2))
-        day += timedelta(days=1)
+            is_transfer_out = is_negative_journaled_share_transfer(tx)
+            remaining = abs(tx["qty"])
+            account_lots = lots[lot_key]
+            lot_idx = 0
+            while remaining > EPSILON and lot_idx < len(account_lots):
+                lot = account_lots[lot_idx]
+                if lot["qty"] <= EPSILON:
+                    account_lots.pop(lot_idx)
+                    continue
+                matched = min(remaining, lot["qty"])
+                if is_transfer_out:
+                    pending_transfers_by_symbol[tx["symbol"]].append(
+                        {"qty": matched, "price": lot["price"]}
+                    )
+                lot["qty"] -= matched
+                remaining -= matched
+                if lot["qty"] <= EPSILON:
+                    account_lots.pop(lot_idx)
+                else:
+                    lot_idx += 1
+
+        # Mark-to-market open lots once we are inside the report window.
+        if walk_day >= start_date:
+            total_unrealized_loss = 0.0
+            for lot_key, account_lots in lots.items():
+                symbol = lot_key.split("|", 1)[1] if "|" in lot_key else lot_key
+                current_price = price_lookup.get(symbol, {}).get(walk_day)
+                if current_price is None:
+                    continue
+                for lot in account_lots:
+                    if lot["qty"] <= EPSILON:
+                        continue
+                    lot_gain_loss = lot["qty"] * (current_price - lot["price"])
+                    if lot_gain_loss < 0.0:
+                        total_unrealized_loss += lot_gain_loss
+            series.append(round(total_unrealized_loss, 2))
+
+        walk_day += timedelta(days=1)
+
+    # If start_date is before any transactions, pad leading zeros.
+    expected_days = (end_date - start_date).days + 1
+    if len(series) < expected_days:
+        series = [0.0] * (expected_days - len(series)) + series
 
     return series, price_lookup
 
