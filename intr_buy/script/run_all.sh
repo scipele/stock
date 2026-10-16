@@ -319,3 +319,5 @@ if [[ "$CREATE_REPORT" == "y" ]]; then
 else
     echo "4.  Skipping LibreOffice open (report creation was skipped)."
 fi
+# pause
+read -p "Press Enter to exit..."
