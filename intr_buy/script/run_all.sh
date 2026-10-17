@@ -4,15 +4,34 @@
 
 set -e
 
-# Resolve script and project root paths dynamically
-SCRIPT_DIR_C="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-ROOT_DIR="$( cd "$SCRIPT_DIR_C/../.." && pwd )"
-SCRIPT_DIR_A="$ROOT_DIR/buy_opp/script"
-SCRIPT_DIR_B="$ROOT_DIR/intr_value/script"
+# Use one explicit project root and absolute paths throughout.
+PROJECT_ROOT="/home/dev/stock"
 
-CUR_POS_TICKERS_FILE="$ROOT_DIR/buy_opp/data/tickers_current_positions.csv"
+BUY_OPP_DIR="$PROJECT_ROOT/buy_opp"
+INTR_VALUE_DIR="$PROJECT_ROOT/intr_value"
+INTR_BUY_DIR="$PROJECT_ROOT/intr_buy"
 
-cd "$SCRIPT_DIR_A"
+BUY_SCRIPT_DIR="$BUY_OPP_DIR/script"
+INTR_VALUE_SCRIPT_DIR="$INTR_VALUE_DIR/script"
+INTR_BUY_SCRIPT_DIR="$INTR_BUY_DIR/script"
+
+CUR_POS_TICKERS_FILE="$BUY_OPP_DIR/data/tickers_current_positions.csv"
+COMBINED_TICKERS_FILE="$BUY_OPP_DIR/data/tickers_combined.csv"
+INTR_TICKERS_FILE="$INTR_VALUE_DIR/data/tickers_combined.csv"
+
+BUY_FUNDAMENTALS_SCRIPT="$BUY_OPP_DIR/py/get_financials.py"
+BUY_METADATA_SCRIPT="$BUY_OPP_DIR/py/get_ticker_metadata.py"
+BUY_SCANNER="$BUY_OPP_DIR/cpp/bin/buy_opp"
+INTR_DATA_SCRIPT="$INTR_VALUE_DIR/py/get_intrinsic_data.py"
+INTR_SCANNER="$INTR_VALUE_DIR/cpp/bin/intr_value"
+COMBINER="$INTR_BUY_DIR/cpp/bin/intr_buy"
+REPORT_SCRIPT="$INTR_BUY_DIR/py/create_intr_buy_report.py"
+
+BUY_SUMMARY="$BUY_OPP_DIR/output/summary_all.csv"
+INTR_SUMMARY="$INTR_VALUE_DIR/output/summary_intrinsic.csv"
+COMBINED_REPORT="$INTR_BUY_DIR/output/combined_report.ods"
+
+cd "$BUY_SCRIPT_DIR"
 
 # ==========================================
 # GENERAL QUESTIONS FOR ALL THREE PROGRAMS
@@ -66,12 +85,12 @@ echo
 # ==========================================
 # 1.1 CURRENT POSITIONS
 # ==========================================
-echo "1.1  Current Positions"
+echo "   1.1  Current Positions"
 
 if [[ "$INCLUDE_CUR_POSITIONS" == "y" ]]; then
     echo "     → Updating current positions..."
 
-    ./get_cur_pos_tickers.sh
+    "$BUY_SCRIPT_DIR/get_cur_pos_tickers.sh"
 
     # Fix common Yahoo Finance symbol differences
     if [[ -f "$CUR_POS_TICKERS_FILE" ]]; then
@@ -91,7 +110,7 @@ echo
 # ==========================================
 # 1.1a–1.1e COMBINE TICKER LISTS
 # ==========================================
-echo "1.1a–1.1e  Combining ticker lists..."
+echo "   1.1a–1.1e  Combining ticker lists..."
 
 [[ "$INCLUDE_CUR_POSITIONS" == "y" ]] && echo "           Current positions: INCLUDED"
 [[ "$INCLUDE_CUR_POSITIONS" != "y" ]] && echo "           Current positions: EXCLUDED"
@@ -104,7 +123,7 @@ echo "1.1a–1.1e  Combining ticker lists..."
 echo "           → Output: tickers_combined.csv"
 
 # Sixth argument controls inclusion of current positions
-./combine_sort_tickers.sh \
+"$BUY_SCRIPT_DIR/combine_sort_tickers.sh" \
     "$INCLUDE_DOW" \
     "$INCLUDE_SP500" \
     "$INCLUDE_RUSSELL" \
@@ -117,12 +136,13 @@ echo
 # ==========================================
 # 1.2 FUNDAMENTALS
 # ==========================================
-echo "1.2  Fundamentals"
+echo "1.2  Buy Opportunity Fundamentals"
 
 if [[ "$UPDATE_FUNDAMENTALS" == "y" ]]; then
     echo "     → Activating virtual environment and running fundamentals gatherer..."
+    echo "     Python program: $BUY_FUNDAMENTALS_SCRIPT"
     source /home/dev/py/.venv/bin/activate
-    python ../py/get_financials.py
+    python "$BUY_FUNDAMENTALS_SCRIPT"
     deactivate
 else
     echo "     → Skipping fundamentals update."
@@ -138,7 +158,7 @@ echo "1.3  Ticker Metadata"
 if [[ "$UPDATE_TICKER_METADATA" == "y" ]]; then
     echo "     → Activating virtual environment and running ticker metadata gatherer..."
     source /home/dev/py/.venv/bin/activate
-    python ../py/get_ticker_metadata.py
+    python "$BUY_METADATA_SCRIPT"
     deactivate
 else
     echo "     → Skipping ticker metadata update."
@@ -146,16 +166,17 @@ fi
 
 echo
 
+
 # ==========================================
 # 1.4 C++ SCANNER
 # ==========================================
 echo "1.4  C++ Scanner"
 
 if [[ "$RUN_CPP_SCANNER" == "y" ]]; then
-    echo "     → Running C++ scanner..."
-    cd "$ROOT_DIR/buy_opp/cpp/bin"
-    ./buy_opp
-    cd "$SCRIPT_DIR_A"
+    echo "     → Running C++ scanner: $BUY_SCANNER"
+    cd "$BUY_OPP_DIR/cpp/bin"
+    "$BUY_SCANNER"
+    cd "$BUY_SCRIPT_DIR"
 else
     echo "     → Skipping C++ scanner."
 fi
@@ -165,7 +186,7 @@ echo
 # ==========================================
 # PROGRAM #2 – INTRINSIC VALUE
 # ==========================================
-cd "$SCRIPT_DIR_B"
+cd "$INTR_VALUE_SCRIPT_DIR"
 
 echo
 echo "============================================"
@@ -173,17 +194,22 @@ echo " Program #2 - Intrinsic Value Scanner"
 echo "============================================"
 echo
 
+# ------------------------------------------------------------------
+# 2.0 Update Intrinsic-value fundamentals / valuation data (Python)
+# ------------------------------------------------------------------
+echo
+
 # ------------------------------------------
 # 2.1 COPY TICKER LIST
 # ------------------------------------------
 echo "2.1  Copy Ticker List"
-echo "     Using: ../data/tickers_combined.csv"
+echo "     Using: $INTR_TICKERS_FILE"
 
 if [[ "$COPY_TICKERS" == "y" ]]; then
-    if [[ -f "$ROOT_DIR/buy_opp/data/tickers_combined.csv" ]]; then
-        cp "$ROOT_DIR/buy_opp/data/tickers_combined.csv" \
-           "$ROOT_DIR/intr_value/data/tickers_combined.csv"
-        echo "     → Copied successfully from buy_opp"
+    if [[ -f "$COMBINED_TICKERS_FILE" ]]; then
+        cp "$COMBINED_TICKERS_FILE" "$INTR_TICKERS_FILE"
+        echo "     → Copied successfully from buy_opp to"
+        echo "     → Full path: $INTR_TICKERS_FILE"
     else
         echo "     ERROR: buy_opp tickers_combined.csv not found"
         exit 1
@@ -193,9 +219,9 @@ else
 fi
 
 # Fix common Yahoo Finance symbol differences
-if [[ -f "$ROOT_DIR/intr_value/data/tickers_combined.csv" ]]; then
-    sed -i 's/BRK\.B/BRK-B/g' "$ROOT_DIR/intr_value/data/tickers_combined.csv"
-    sed -i 's/BRK\.A/BRK-A/g' "$ROOT_DIR/intr_value/data/tickers_combined.csv"
+if [[ -f "$INTR_TICKERS_FILE" ]]; then
+    sed -i 's/BRK\.B/BRK-B/g' "$INTR_TICKERS_FILE"
+    sed -i 's/BRK\.A/BRK-A/g' "$INTR_TICKERS_FILE"
 fi
 
 echo
@@ -207,9 +233,12 @@ echo "2.2  Intrinsic-value data update"
 
 if [[ "$UPDATE_DATA" == "y" ]]; then
     echo "     → Activating virtual environment and running data gatherer..."
+    echo "     → Python program: $INTR_DATA_SCRIPT"
     source /home/dev/py/.venv/bin/activate
-    python ../py/get_intrinsic_data.py
+    python "$INTR_DATA_SCRIPT"
     deactivate
+    echo "     program output: "
+    echo "     → Full path: $INTR_SUMMARY"
     echo "     → Data update complete"
 else
     echo "     → Skipping data update (using existing fundamentals_intrinsic.csv)"
@@ -222,13 +251,14 @@ echo
 # ------------------------------------------
 echo "2.3  C++ valuation engine"
 
-if [[ -x ../cpp/bin/intr_value ]]; then
-    echo "     → Running C++ scanner..."
-    cd ../cpp/bin
-    ./intr_value
-    cd "$SCRIPT_DIR_B"
+if [[ -x "$INTR_SCANNER" ]]; then
+    echo "     → Running C++ scanner: $INTR_SCANNER"
+    cd "$INTR_VALUE_DIR/cpp/bin"
+    "$INTR_SCANNER"
+    cd "$INTR_VALUE_SCRIPT_DIR"
 else
-    echo "     → C++ binary not found yet (../cpp/bin/intr_value)"
+    echo "     ERROR: C++ binary not found or not executable: $INTR_SCANNER"
+    exit 1
 fi
 
 echo
@@ -242,15 +272,15 @@ echo " Program #3 - Data Combination & Report Script"
 echo "==============================================="
 echo
 
-cd "$SCRIPT_DIR_C"
+cd "$INTR_BUY_SCRIPT_DIR"
 
 echo "     Running from: $(pwd)"
 echo
 
 # Define paths explicitly
-BUY_FILE="$ROOT_DIR/buy_opp/output/summary_all.csv"
-INTR_FILE="$ROOT_DIR/intr_value/output/summary_intrinsic.csv"
-CPP_PROGRAM="$SCRIPT_DIR_C/../cpp/bin/intr_buy"
+BUY_FILE="$BUY_SUMMARY"
+INTR_FILE="$INTR_SUMMARY"
+CPP_PROGRAM="$COMBINER"
 
 # ==========================================
 # 3.1 COPY FILES
@@ -278,8 +308,8 @@ if [[ "$COPY_FILES" == "y" ]]; then
     echo
 
     if [[ -f "$BUY_FILE" && -f "$INTR_FILE" ]]; then
-        cp "$BUY_FILE" "$SCRIPT_DIR_C/../data/summary_all.csv"
-        cp "$INTR_FILE" "$SCRIPT_DIR_C/../data/summary_intrinsic.csv"
+        cp "$BUY_FILE" "$INTR_BUY_DIR/data/summary_all.csv"
+        cp "$INTR_FILE" "$INTR_BUY_DIR/data/summary_intrinsic.csv"
         echo "     → Files copied successfully to local data storage."
     else
         echo "     ERROR: One or both input files do not exist."
@@ -321,7 +351,7 @@ echo "3.3  LibreOffice report"
 if [[ "$CREATE_REPORT" == "y" ]]; then
     echo "     → Running Python report layout engine..."
 
-    if /usr/bin/python3 "$SCRIPT_DIR_C/../py/create_intr_buy_report.py"; then
+    if /usr/bin/python3 "$REPORT_SCRIPT"; then
         echo "     Report file structured successfully."
     else
         echo "     ERROR: Python report script failed!"
@@ -339,7 +369,7 @@ echo
 echo "========================================="
 echo " All three programs completed"
 echo " Runtime: ${ELAPSED} seconds"
-echo " Output: output/combined_report.ods"
+echo " Output: $COMBINED_REPORT"
 echo "========================================="
 echo
 
@@ -347,7 +377,7 @@ echo
 # 4. OPEN LIBREOFFICE
 # ==========================================
 if [[ "$CREATE_REPORT" == "y" ]]; then
-    REPORT_FILE="$SCRIPT_DIR_C/../output/combined_report.ods"
+    REPORT_FILE="$COMBINED_REPORT"
 
     echo "4.  Opening report in LibreOffice..."
 

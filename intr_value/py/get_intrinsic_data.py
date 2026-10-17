@@ -16,9 +16,9 @@ from requests.adapters import HTTPAdapter
 # ------------------------------------------------------------------
 # Configuration
 # ------------------------------------------------------------------
-INPUT_FILE = "../data/tickers_combined.csv"
-OUTPUT_FILE = "../data/fundamentals_intrinsic.csv"
-BUY_OPP_INDEX_DIR = "../../buy_opp/data"
+INPUT_FILE = "/home/dev/stock/intr_value/data/tickers_combined.csv"
+OUTPUT_FILE = "/home/dev/stock/intr_value/data/fundamentals_intrinsic.csv"
+BUY_OPP_INDEX_DIR = "/home/dev/stock/buy_opp/data"
 MAX_HISTORY_YEARS = 5
 
 # REDUCED CONCURRENCY: Higher values invite Yahoo Finance IP blocks
@@ -219,8 +219,10 @@ def get_data(ticker, index_membership):
 def main():
     print(" === Intrinsic Value – Data Gatherer (concurrent) ===")
     tickers = load_tickers(INPUT_FILE)
-    index_membership = load_index_membership()
     print(f" Loaded {len(tickers)} tickers")
+    
+    index_membership = load_index_membership()
+    print(f" Loaded {len(index_membership)} index map entries")
     print(f" Loaded index map entries: {len(index_membership)}")
     print(f" Using {MAX_WORKERS} parallel workers with pacing gaps...\n")
 
@@ -258,4 +260,22 @@ def main():
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
-        
+        # --------------------------------------------------
+        # Completion summary
+        # --------------------------------------------------
+        successful = sum(1 for r in rows if r.get("DataQuality") == "ok")
+        with_errors = len(rows) - successful
+
+        print("\n" + "=" * 55)
+        print(" INTRINSIC VALUE DATA GATHERING COMPLETED")
+        print("=" * 55)
+        print(f" Tickers requested : {len(tickers)}")
+        print(f" Tickers processed : {len(rows)}")
+        print(f" Successful        : {successful}")
+        print(f" With data issues  : {with_errors}")
+        print(f" Output file       : {OUTPUT_FILE}")
+        print(f" Finished at       : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print("=" * 55)
+
+if __name__ == "__main__":
+    main()

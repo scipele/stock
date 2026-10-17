@@ -43,7 +43,7 @@ if [[ "$INCLUDE_CUR_POSITIONS" == "y" && -f "$INPUT_FILE_A" ]]; then
         awk -F',' 'NF && $1 != "" {print $1 ",Y"}' \
         > "$TMP_DIR/current.txt"
 else
-    echo "Excluding current positions."
+    echo "            Excluding current positions."
     > "$TMP_DIR/current.txt"
 fi
 
@@ -122,5 +122,6 @@ END {
 sort >> "$OUTPUT_FILE"
 
 echo "Created: $OUTPUT_FILE"
+echo "Full path: $(realpath "$OUTPUT_FILE")"
 echo "Current positions included: $INCLUDE_CUR_POSITIONS"
 echo "Total tickers: $(($(wc -l < "$OUTPUT_FILE") - 1))"
