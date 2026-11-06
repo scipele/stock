@@ -7,8 +7,8 @@ g++ -std=c++17 -O2 -Wall -I../include main.cpp intrinsic.cpp -o ../bin/intr_valu
 #include <chrono>
 
 int main() {
-    const std::string inputPath  = "../../data/fundamentals_intrinsic.csv";
-    const std::string outputPath = "../../output/summary_intrinsic.csv";
+    const std::string inputPath  = "/home/dev/stock/intr_value/data/fundamentals_intrinsic.csv";
+    const std::string outputPath = "/home/dev/stock/intr_value/output/summary_intrinsic.csv";
 
     std::cout << "       === Intrinsic Value – C++ Engine ===\n";
 

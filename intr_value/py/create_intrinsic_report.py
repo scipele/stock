@@ -10,8 +10,8 @@ from com.sun.star.beans import PropertyValue
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-CSV_FILE = os.path.join(BASE_DIR, "../output/summary_intrinsic.csv")
-ODS_FILE = os.path.join(BASE_DIR, "../output/summary_intrinsic.ods")
+CSV_FILE = "/home/dev/stock/intr_value/output/summary_intrinsic.csv"
+ODS_FILE = "/home/dev/stock/intr_value/output/summary_intrinsic.ods"
 
 
 # Numeric code → human-readable name
