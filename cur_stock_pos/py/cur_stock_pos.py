@@ -81,22 +81,22 @@ def find_latest_schwab_file():
 
 
 def clean_money(value):
-
     if pd.isna(value):
         return 0.0
 
     value = str(value)
 
-    value = (
-        value.replace("$", "")
-             .replace(",", "")
-             .strip()
-    )
+    value = value.replace("$", "").replace(",", "").strip()
 
-    if value in ("", "--"):
+    # Check if the string is empty, a standard placeholder, or consists only of dashes
+    if value in ("", "--") or all(char == "-" for char in value):
         return 0.0
 
-    return float(value)
+    try:
+        return float(value)
+    except ValueError:
+        # Fallback to 0.0 if any other unexpected text format slips through
+        return 0.0
 
 
 def read_csv():
@@ -291,6 +291,30 @@ def read_csv():
     return ClearPrintDataFrame(result)
 
 
+def sector_values(data):
+    # Create a local copy to avoid a SettingWithCopyWarning
+    df = data.copy()
+
+    # Apply your clean_money function to each value in the financial columns
+    for col in ["Mk_Value", "Cost_Basis", "delta"]:
+        if col in df.columns:
+            df[col] = df[col].map(clean_money)
+
+    # Now that the columns are proper floats, the sum will work numerically
+    sector_sums = df.groupby("Sector").agg(
+        Mk_Value_sum=("Mk_Value", "sum"),
+        Cost_Basis_sum=("Cost_Basis", "sum"),
+        delta_sum=("delta", "sum"),
+    )
+
+    # Calculate percent change safely
+    sector_sums["pct_change"] = (
+        (sector_sums["Mk_Value_sum"] / sector_sums["Cost_Basis_sum"] - 1) * 100
+    ).round(2)
+
+    return sector_sums
+
+
 if __name__ == "__main__":
 
     OUTPUT_DIR.mkdir(
@@ -299,3 +323,4 @@ if __name__ == "__main__":
 
     data = read_csv()
     print(data)
+    print(sector_values(data))
