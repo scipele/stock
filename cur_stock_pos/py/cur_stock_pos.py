@@ -241,7 +241,6 @@ def read_csv():
     # Return only the fields needed by the
     result = pd.DataFrame(
         {
-            "Account": df["Account"].values,
             "Symbol": df["Symbol"].values,
             "Description" :df["Description"].values,
             "Qty": df["Qty (Quantity)"].values,
@@ -249,8 +248,8 @@ def read_csv():
             "Cost_Basis": df["Cost Basis"].apply(clean_money).values,
             "delta": (df["Mkt Val (Market Value)"].apply(clean_money).values) - (df["Cost Basis"].apply(clean_money).values),
             "pct": ((((df["Mkt Val (Market Value)"].apply(clean_money) / df["Cost Basis"].apply(clean_money)) - 1) * 100).round(2).astype(str) + "%").values,
-           
-            "Sector": df["Sector"].values
+            "Sector": df["Sector"].values,
+            "Account": df["Account"].values
         }
     )
 
@@ -294,6 +293,8 @@ def read_csv():
 def sector_values(data):
     # Create a local copy to avoid a SettingWithCopyWarning
     df = data.copy()
+    # ignore line "-----"
+    df = df[df["Account"].str.strip() != "------"]
 
     # Apply your clean_money function to each value in the financial columns
     for col in ["Mk_Value", "Cost_Basis", "delta"]:
@@ -315,6 +316,35 @@ def sector_values(data):
     return sector_sums
 
 
+def aggregate_tickers_accross_accounts(data):
+
+
+    # Create a local copy to avoid a SettingWithCopyWarning
+    df = data.copy()
+    
+    # ignore line "-----"
+    df = df[df["Account"].str.strip() != "------"]
+
+    # Apply your clean_money function to each value in the financial columns
+    for col in ["Mk_Value", "Cost_Basis", "delta"]:
+        if col in df.columns:
+            df[col] = df[col].map(clean_money)
+
+    # Now that the columns are proper floats, the sum will work numerically
+    ticker_agg = df.groupby("Symbol").agg(
+        Mk_Value_sum=("Mk_Value", "sum"),
+        Cost_Basis_sum=("Cost_Basis", "sum"),
+        delta_sum=("delta", "sum"),
+    )
+
+    # Calculate percent change safely
+    ticker_agg["pct_change"] = (
+        (ticker_agg["Mk_Value_sum"] / ticker_agg["Cost_Basis_sum"] - 1) * 100
+    ).round(2)
+
+    return ticker_agg
+
+
 if __name__ == "__main__":
 
     OUTPUT_DIR.mkdir(
@@ -322,5 +352,9 @@ if __name__ == "__main__":
     )
 
     data = read_csv()
-    print(data)
-    print(sector_values(data))
+    print(f"1. All Data:\n{data}\n\n")
+    print(f"2. Sector Values Aggregated:\n{sector_values(data)}\n\n")
+    print(
+        f"3. Aggregate_tickers_accross_accounts sorted by delta_sum:\n"
+        f"{aggregate_tickers_accross_accounts(data).sort_values(by='delta_sum', ascending=False)}"
+    )
