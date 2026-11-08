@@ -105,7 +105,7 @@ def read_csv():
 
     print()
     print(filename)
-    print(f"Export Timestamp: {export_timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Export Timestamp: {export_timestamp.strftime('%Y-%m-%d "%"H:%M:%S')}")
 
     # Read the file one CSV row at a time.
     # This is necessary because Schwab places
@@ -311,14 +311,13 @@ def sector_values(data):
     # Calculate percent change safely
     sector_sums["pct_change"] = (
         (sector_sums["Mk_Value_sum"] / sector_sums["Cost_Basis_sum"] - 1) * 100
-    ).round(2)
+    ).round(2).astype(str) + "%"
 
+   
     return sector_sums
 
 
 def aggregate_tickers_accross_accounts(data):
-
-
     # Create a local copy to avoid a SettingWithCopyWarning
     df = data.copy()
     
@@ -340,7 +339,7 @@ def aggregate_tickers_accross_accounts(data):
     # Calculate percent change safely
     ticker_agg["pct_change"] = (
         (ticker_agg["Mk_Value_sum"] / ticker_agg["Cost_Basis_sum"] - 1) * 100
-    ).round(2)
+        ).round(2).astype(str) + "%"
 
     return ticker_agg
 
@@ -354,7 +353,10 @@ if __name__ == "__main__":
     data = read_csv()
     print(f"1. All Data:\n{data}\n\n")
     print(f"2. Sector Values Aggregated:\n{sector_values(data)}\n\n")
+    
     print(
-        f"3. Aggregate_tickers_accross_accounts sorted by delta_sum:\n"
-        f"{aggregate_tickers_accross_accounts(data).sort_values(by='delta_sum', ascending=False)}"
+        f"3. Aggregate_tickers_accross_accounts sorted by pct_change:\n"
     )
+    df_sorted = aggregate_tickers_accross_accounts(data)
+    df_sorted["pct_change"] = df_sorted["pct_change"].str.rstrip("%").astype(float)
+    print(f"{df_sorted.sort_values(by='pct_change', ascending=False)}")
