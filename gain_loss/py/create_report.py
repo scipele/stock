@@ -406,19 +406,26 @@ def build_unrealized_market_value_series(records, start_date, end_date):
 
         # Mark-to-market open lots once we are inside the report window.
         if walk_day >= start_date:
-            total_unrealized_loss = 0.0
+            symbol_gain_loss = defaultdict(float)
+
             for lot_key, account_lots in lots.items():
                 symbol = lot_key.split("|", 1)[1] if "|" in lot_key else lot_key
                 current_price = price_lookup.get(symbol, {}).get(walk_day)
+
                 if current_price is None:
                     continue
+
                 for lot in account_lots:
                     if lot["qty"] <= EPSILON:
                         continue
+
                     lot_gain_loss = lot["qty"] * (current_price - lot["price"])
-                    if lot_gain_loss < 0.0:
-                        total_unrealized_loss += lot_gain_loss
-            series.append(round(total_unrealized_loss, 2))
+                    symbol_gain_loss[symbol] += lot_gain_loss
+
+            # Include net unrealized gain/loss across all individual stocks.
+            total_unrealized_gain_loss = sum(symbol_gain_loss.values())
+
+            series.append(round(total_unrealized_gain_loss, 2))
 
         walk_day += timedelta(days=1)
 
