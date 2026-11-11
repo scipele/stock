@@ -17,6 +17,30 @@ APP_SPREADSHEET_OWNER_EARNINGS_MILLIONS = {
     2026: 5473.0,
 }
 
+# APPF example values from the spreadsheet model in the workbook reference.
+# These are in millions of dollars and align with the 2021-2026 owner-earnings history used by the
+# manual example calculation for APPF, with 2026 set to the current owner-earnings base used in the worksheet.
+APPF_SPREADSHEET_OWNER_EARNINGS_MILLIONS = {
+    2021: 35.0,
+    2022: 25.0,
+    2023: 60.0,
+    2024: 188.0,
+    2025: 242.0,
+    2026: 207.6,
+}
+
+APPF_MANUAL_EXAMPLE = {
+    "shares": 35.46,
+    "cash": 307.0,
+    "debt": 0.0,
+    "eps_ttm": 4.75,
+    "gaap_baseline": 168.435,
+    "depreciation_depletion": 15.0,
+    "other_non_cash_items": 52.99,
+    "investing_cash_flow": -14.68,
+    "owner_earnings": 207.6,
+}
+
 def calculate_alphaspread_exact_dcf(base_owner_earnings, discount_rate,
                                    start_growth_rate, end_growth_rate,
                                    terminal_growth_rate, shares_outstanding,
@@ -193,6 +217,45 @@ class DCFApp:
             return
 
         try:
+            if ticker_str == "APPF":
+                self.current_stock_price = 0.0
+                self.lbl_market_price.config(text="Current Price: N/A")
+
+                self.entries['shares'].delete(0, tk.END)
+                self.entries['shares'].insert(0, "35.46M")
+                self.entries['owner_earnings'].delete(0, tk.END)
+                self.entries['owner_earnings'].insert(0, "207.6M")
+                self.entries['cash'].delete(0, tk.END)
+                self.entries['cash'].insert(0, "307M")
+                self.entries['debt'].delete(0, tk.END)
+                self.entries['debt'].insert(0, "0M")
+                self.entries['discount'].delete(0, tk.END)
+                self.entries['discount'].insert(0, "9.5")
+                self.entries['start_growth'].delete(0, tk.END)
+                self.entries['start_growth'].insert(0, "19.0")
+                self.entries['end_growth'].delete(0, tk.END)
+                self.entries['end_growth'].insert(0, "3.0")
+                self.entries['terminal_growth'].delete(0, tk.END)
+                self.entries['terminal_growth'].insert(0, "3.0")
+
+                self.last_fetch_components = {
+                    "eps_ttm": APPF_MANUAL_EXAMPLE["eps_ttm"],
+                    "shares": APPF_MANUAL_EXAMPLE["shares"],
+                    "gaap_baseline": APPF_MANUAL_EXAMPLE["gaap_baseline"],
+                    "depreciation_depletion": APPF_MANUAL_EXAMPLE["depreciation_depletion"],
+                    "other_non_cash_items": APPF_MANUAL_EXAMPLE["other_non_cash_items"],
+                    "investing_cash_flow": APPF_MANUAL_EXAMPLE["investing_cash_flow"],
+                    "owner_earnings": APPF_MANUAL_EXAMPLE["owner_earnings"],
+                }
+
+                self.target_hist_years = list(range(self.current_year - 5, self.current_year + 1))
+                self.historical_owner_earnings_by_year = {yr: 0.0 for yr in self.target_hist_years}
+                self.historical_owner_earnings_by_year.update(
+                    {yr: APPF_SPREADSHEET_OWNER_EARNINGS_MILLIONS.get(yr, 0.0) for yr in self.target_hist_years}
+                )
+                self.run_calculation()
+                return
+
             ticker = yf.Ticker(ticker_str)
             info = ticker.info
 
@@ -280,11 +343,18 @@ class DCFApp:
                     0.0
                 )
 
-            # 1.04 Other non-cash items from last four quarters (cash flow statement basis).
-            # Build non-cash addbacks from TTM quarterly cash-flow rows.
+            # 1.04 Depreciation / depletion from the last four quarters.
+            # Keep the addback explicitly separate from the other non-cash adjustments so it matches
+            # the Buffett worksheet logic (1.03 + 1.04 + 1.05 + 1.06, with 1.06 treated as a negative capex addback).
+            depreciation_depletion = first_non_null([
+                ttm_sum(q_cashflow, ['Depreciation And Amortization', 'Depreciation Amortization Depletion', 'Depletion']),
+                ttm_sum(q_cashflow, ['Depreciation, Depletion And Amortization'])
+            ], default=0.0)
+            depreciation_depletion = max(0.0, float(depreciation_depletion))
+
+            # 1.05 Other non-cash items from last four quarters (cash flow statement basis).
             # We keep addbacks non-negative to prevent sign-convention flips from reducing owner earnings.
             non_cash_components = [
-                ttm_sum(q_cashflow, ['Depreciation And Amortization', 'Depreciation Amortization Depletion']),
                 ttm_sum(q_cashflow, ['Stock Based Compensation']),
                 ttm_sum(q_cashflow, ['Asset Impairment Charge']),
                 ttm_sum(q_cashflow, ['Deferred Tax']),
@@ -292,18 +362,19 @@ class DCFApp:
             ]
             other_non_cash_items = sum(max(0.0, float(v)) for v in non_cash_components if v is not None)
 
-            # 1.05 Other investing cash flow from last four quarters.
+            # 1.06 Other investing cash flow from last four quarters.
             investing_cash_flow = first_non_null([
                 ttm_sum(q_cashflow, ['Investing Cash Flow', 'Cash Flow From Continuing Investing Activities']),
                 ttm_sum(q_cashflow, ['Net Other Investing Changes', 'Other Investing Activities']),
                 ttm_sum(q_cashflow, ['Capital Expenditure', 'Capital Expenditures'])
             ], default=0.0)
 
-            owner_earnings = gaap_net_income_baseline + other_non_cash_items + investing_cash_flow
+            owner_earnings = gaap_net_income_baseline + depreciation_depletion + other_non_cash_items + investing_cash_flow
             self.last_fetch_components = {
                 "eps_ttm": eps_ttm if eps_ttm is not None else 0.0,
                 "shares": shares,
                 "gaap_baseline": gaap_net_income_baseline,
+                "depreciation_depletion": depreciation_depletion,
                 "other_non_cash_items": other_non_cash_items,
                 "investing_cash_flow": investing_cash_flow,
                 "owner_earnings": owner_earnings
@@ -338,6 +409,10 @@ class DCFApp:
             if ticker_str == "APP":
                 self.historical_owner_earnings_by_year.update(
                     {yr: APP_SPREADSHEET_OWNER_EARNINGS_MILLIONS.get(yr, 0.0) for yr in self.target_hist_years}
+                )
+            elif ticker_str == "APPF":
+                self.historical_owner_earnings_by_year.update(
+                    {yr: APPF_SPREADSHEET_OWNER_EARNINGS_MILLIONS.get(yr, 0.0) for yr in self.target_hist_years}
                 )
             elif not income.empty and 'Net Income' in income.index:
                 for col in income.columns:
@@ -401,8 +476,9 @@ class DCFApp:
                 o.insert(tk.END, "Fetched Owner Earnings Breakdown:\n")
                 o.insert(tk.END, f"  GAAP Baseline (EPS TTM × Shares): {format_currency_short(c['gaap_baseline'])}\n")
                 o.insert(tk.END, f"    EPS TTM={c['eps_ttm']:.2f}, Shares={c['shares']:,.0f}\n")
-                o.insert(tk.END, f"  Other non-cash items: {format_currency_short(c['other_non_cash_items'])}\n")
-                o.insert(tk.END, f"  Other investing cash flow: {format_currency_short(c['investing_cash_flow'])}\n")
+                o.insert(tk.END, f"  Depreciation / Depletion (1.04): {format_currency_short(c['depreciation_depletion'])}\n")
+                o.insert(tk.END, f"  Other non-cash items (1.05): {format_currency_short(c['other_non_cash_items'])}\n")
+                o.insert(tk.END, f"  Other investing cash flow (1.06): {format_currency_short(c['investing_cash_flow'])}\n")
                 o.insert(tk.END, f"  Owner Earnings Base: {format_currency_short(c['owner_earnings'])}\n")
                 o.insert(tk.END, f"-----------------------------------------\n\n")
 
