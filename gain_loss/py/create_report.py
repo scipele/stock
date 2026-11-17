@@ -437,12 +437,16 @@ def build_unrealized_market_value_series(records, start_date, end_date):
     return series, price_lookup
 
 
-def build_benchmark_series(symbol, start_date, end_date, starting_capital):
+def build_benchmark_series(symbol, start_date, end_date, daily_invested_capital):
     days = (end_date - start_date).days + 1
     if days <= 0:
         return [], None, None
-    if starting_capital <= 0:
-        return [0.0] * days, None, None
+
+    normalized_daily_capital = []
+    if daily_invested_capital:
+        normalized_daily_capital = [max(float(v), 0.0) for v in daily_invested_capital[:days]]
+    if len(normalized_daily_capital) < days:
+        normalized_daily_capital.extend([0.0] * (days - len(normalized_daily_capital)))
 
     close_by_day = download_close_lookup(symbol, start_date, end_date)
     if not close_by_day:
@@ -471,16 +475,24 @@ def build_benchmark_series(symbol, start_date, end_date, starting_capital):
     if entry_price is None or entry_price <= 0:
         return [0.0] * days, None, None
 
-    shares = starting_capital / entry_price
     series = []
+    running_capital_sum = 0.0
+    day_count = 0
     day = start_date
+    day_index = 0
     while day <= end_date:
+        running_capital_sum += normalized_daily_capital[day_index]
+        day_count += 1
+        cumulative_avg_capital = running_capital_sum / day_count if day_count > 0 else 0.0
+
         price = filled.get(day)
-        if price is None:
+        if price is None or cumulative_avg_capital <= 0.0:
             series.append(0.0)
         else:
-            series.append(round(shares * (float(price) - entry_price), 2))
+            entry_return = (float(price) / entry_price) - 1.0
+            series.append(round(cumulative_avg_capital * entry_return, 2))
         day += timedelta(days=1)
+        day_index += 1
 
     return series, entry_day, entry_price
 
@@ -602,6 +614,14 @@ def compute_realized_metrics(transactions_file, start_date, end_date):
         day += timedelta(days=1)
 
     avg_all_holdings_cost_basis = total_cost_basis / days_in_period if days_in_period > 0 else 0.0
+    daily_invested_capital = []
+    running_cost_basis = 0.0
+    day = start_date
+    while day <= end_date:
+        if day in end_of_day_cost_basis:
+            running_cost_basis = end_of_day_cost_basis[day]
+        daily_invested_capital.append(running_cost_basis)
+        day += timedelta(days=1)
 
     trade_days = sorted(set(daily_buy_notional.keys()) | set(daily_sell_notional.keys()))
     avg_trading_capital = avg_all_holdings_cost_basis
@@ -622,6 +642,7 @@ def compute_realized_metrics(transactions_file, start_date, end_date):
         "avg_invested_capital": avg_invested_capital,
         "avg_trading_capital": avg_trading_capital,
         "avg_all_holdings_cost_basis": avg_all_holdings_cost_basis,
+        "daily_invested_capital": daily_invested_capital,
         "sell_transactions_count": sell_transactions_count,
         "trade_days": len(trade_days),
         "all_keys": len(all_keys),
@@ -884,7 +905,7 @@ def build_cumulative_compare_chart(
         (realized_cumulative, "#1d4ed8", "Realized Cumulative"),
         (unrealized_cumulative_loss, "#dc2626", "Unrealized Cumulative Gain/Loss"),
         (net_cumulative, "#059669", "Net Cumulative (Realized + Unrealized Gain/Loss)"),
-        (voo_benchmark, "#b45309", "VOO Gain/Loss (Avg Trading Capital Benchmark)"),
+        (voo_benchmark, "#b45309", "VOO Gain/Loss (Cumulative Avg Invested-Capital Benchmark)"),
     ]
 
     for values, color, label in lines:
@@ -1005,12 +1026,14 @@ net_cumulative = [
     round(realized + unrealized, 2)
     for realized, unrealized in zip(cumulative_totals, unrealized_market_value_series)
 ]
-benchmark_capital = realized_metrics["avg_trading_capital"] if realized_metrics else 0.0
+benchmark_capital_series = (
+    realized_metrics["daily_invested_capital"] if realized_metrics else [0.0] * len(chart_labels)
+)
 voo_benchmark_series, voo_entry_day, voo_entry_price = build_benchmark_series(
     "VOO",
     period_start,
     period_end,
-    benchmark_capital,
+    benchmark_capital_series,
 )
 compare_chart_svg = build_cumulative_compare_chart(
     chart_labels,
@@ -1022,7 +1045,7 @@ compare_chart_svg = build_cumulative_compare_chart(
 
 if realized_metrics and realized_metrics["cagr"] is not None:
     voo_summary_text = (
-        f"VOO Benchmark Gain/Loss (same avg trading capital): {fmt_total(voo_benchmark_series[-1] if voo_benchmark_series else 0.0)}"
+        f"VOO Benchmark Gain/Loss (using cumulative daily avg invested capital): {fmt_total(voo_benchmark_series[-1] if voo_benchmark_series else 0.0)}"
     )
     if voo_entry_day is not None and voo_entry_price is not None:
         voo_summary_text += f" (entry {voo_entry_day.isoformat()} @ {voo_entry_price:,.2f})"
